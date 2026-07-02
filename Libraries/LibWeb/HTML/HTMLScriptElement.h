@@ -140,6 +140,7 @@ private:
         Classic,
         Module,
         ImportMap,
+        Python,
     };
 
     // https://html.spec.whatwg.org/multipage/scripting.html#concept-script-type

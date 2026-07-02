@@ -1,0 +1,2 @@
+survivor exists: true
+survivor.textContent: python still alive after exception

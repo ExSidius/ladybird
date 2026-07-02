@@ -96,7 +96,13 @@ if (WIN32)
     find_package(mman REQUIRED)
 endif()
 
-find_package(Python3 REQUIRED COMPONENTS Interpreter)
+if (ENABLE_PYTHON_SCRIPTING)
+    # A single find_package call guarantees the build-time interpreter and the
+    # embedded libpython resolve to the same Python version.
+    find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Embed)
+else()
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+endif()
 
 find_package(unofficial-skia CONFIG)
 if(unofficial-skia_FOUND)
