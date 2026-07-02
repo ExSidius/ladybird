@@ -15,6 +15,7 @@
 #include <LibJS/Runtime/NativeFunction.h>
 #include <LibJS/Runtime/Realm.h>
 #include <LibJS/Runtime/VM.h>
+#include <LibWeb/Bindings/Document.h>
 #include <LibWeb/DOM/Document.h>
 #include <LibWeb/DOM/Element.h>
 #include <LibWeb/DOM/Event.h>

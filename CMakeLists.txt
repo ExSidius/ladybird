@@ -52,8 +52,10 @@ set(LADYBIRD_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 list(APPEND CMAKE_MODULE_PATH "${LADYBIRD_SOURCE_DIR}/Meta/CMake")
 
 include(compile_options)
-include(check_for_dependencies)
+# cmake_options must come first: check_for_dependencies keys the Python3
+# component set (Development.Embed) off ENABLE_PYTHON_SCRIPTING.
 include(cmake_options)
+include(check_for_dependencies)
 include(ladybird_helper_processes)
 
 if(ENABLE_ALL_THE_DEBUG_MACROS)
