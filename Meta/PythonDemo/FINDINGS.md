@@ -48,6 +48,22 @@ did not materialize for the inline-script path.
 
 ## Verification
 
+**Update (2026-07-02): fully verified locally** on macOS arm64 (AppleClang 21,
+Python 3.13.7). Smoke harness, full flag-on build, both text tests (hand-written
+expectations matched exactly, no rebaseline), demo page driven via WebDriver
+(6 sequential clicks, away-and-back navigation, second tab, `print()` on
+stdout), exception traceback logged with the renderer surviving, full test-web
+suite (7611 pass / 0 fail / 0 crash), LibWeb unit tests, and a flag-off
+LibWeb+WebContent build. Two fresh-configure build bugs were found and fixed
+in a follow-up commit: cmake_options must be included before
+check_for_dependencies (ENABLE_PYTHON_SCRIPTING was undefined at
+find_package time, breaking generation), and PythonBindings.cpp was missing
+the generated <LibWeb/Bindings/Document.h> include for ElementCreationOptions.
+Probing the shared-namespace caveat: globals (including DOMNode wrappers)
+leak into subsequently loaded documents as documented; reading a leaked
+node's textContent after its document is gone works (GC::Root keeps it
+alive) — no crashes.
+
 **Full builds could not be run where this was developed** (a cloud container
 whose egress policy blocks vcpkg's source downloads — GitHub release assets,
 codeload tarballs, and third-party mirrors all return 403). Everything
