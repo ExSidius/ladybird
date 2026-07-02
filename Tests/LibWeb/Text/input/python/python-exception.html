@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<div id="out"></div>
+<script src="../include.js"></script>
+<script type="text/python">
+raise ValueError("intentional error from python")
+</script>
+<script type="text/python">
+marker = document.createElement("p")
+marker.setAttribute("id", "survivor")
+marker.textContent = "python still alive after exception"
+document.getElementById("out").appendChild(marker)
+</script>
+<script>
+    test(() => {
+        const survivor = document.getElementById("survivor");
+        println("survivor exists: " + (survivor !== null));
+        println("survivor.textContent: " + survivor.textContent);
+    });
+</script>

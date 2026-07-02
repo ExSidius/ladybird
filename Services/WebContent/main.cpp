@@ -23,6 +23,9 @@
 #include <LibWeb/Bindings/MainThreadVM.h>
 #include <LibWeb/DOM/Document.h>
 #include <LibWeb/Fetch/Fetching/Fetching.h>
+#ifdef LADYBIRD_ENABLE_PYTHON
+#    include <LibWeb/HTML/Scripting/PythonBindings.h>
+#endif
 #include <LibWeb/HTML/UniversalGlobalScope.h>
 #include <LibWeb/HTML/Window.h>
 #include <LibWeb/Internals/Internals.h>
@@ -255,6 +258,14 @@ ErrorOr<int> ladybird_main(Main::Arguments arguments)
     if (enable_idl_tracing) {
         Web::WebIDL::set_enable_idl_tracing(true);
     }
+
+#ifdef LADYBIRD_ENABLE_PYTHON
+    // The embedded interpreter must start before the sandbox is applied:
+    // CPython reads its standard library from the filesystem during startup,
+    // which the sandbox's filesystem restrictions would block.
+    if (!Web::HTML::Python::initialize_interpreter())
+        dbgln("WebContent: embedded Python is unavailable; text/python scripts will be ignored");
+#endif
 
     if (!disable_sandbox)
         TRY(RendererSandbox::apply_sandbox(config_path));

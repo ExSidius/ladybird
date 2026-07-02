@@ -1276,10 +1276,23 @@ set(GENERATED_SOURCES
     WebGL/WebGLContextProxy.cpp
 )
 
+if (ENABLE_PYTHON_SCRIPTING)
+    list(APPEND SOURCES
+        HTML/Scripting/PythonBindings.cpp
+        HTML/Scripting/PythonScript.cpp
+    )
+endif()
+
 ladybird_lib(LibWeb web EXPLICIT_SYMBOL_EXPORT)
 add_dependencies(LibWeb generate_GLFunctions.cpp)
 
 target_link_libraries(LibWeb PRIVATE LibCore LibCompress LibCrypto LibJS LibHTTP LibGfx LibIPC LibRegex LibSyntax LibTextCodec LibUnicode LibMedia LibWasm LibXML LibURL LibTLS LibRequests LibGC LibSync LibThreading skia SDL3::SDL3 LibXml2::LibXml2)
+
+if (ENABLE_PYTHON_SCRIPTING)
+    # PUBLIC so that dependents (e.g. WebContent's interpreter bootstrap) see the define.
+    target_compile_definitions(LibWeb PUBLIC LADYBIRD_ENABLE_PYTHON=1)
+    target_link_libraries(LibWeb PRIVATE Python3::Python)
+endif()
 
 # LibWeb still includes ANGLE's GLES headers for WebGL constants and types, but
 # the actual GL entry points live in the Compositor. Copy only ANGLE's compile

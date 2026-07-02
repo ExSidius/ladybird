@@ -20,6 +20,9 @@
 #include <LibWeb/HTML/Scripting/ClassicScript.h>
 #include <LibWeb/HTML/Scripting/Fetching.h>
 #include <LibWeb/HTML/Scripting/ImportMapParseResult.h>
+#ifdef LADYBIRD_ENABLE_PYTHON
+#    include <LibWeb/HTML/Scripting/PythonScript.h>
+#endif
 #include <LibWeb/HTML/Scripting/TemporaryExecutionContext.h>
 #include <LibWeb/HTML/Window.h>
 #include <LibWeb/Infra/CharacterTypes.h>
@@ -191,6 +194,12 @@ void HTMLScriptElement::execute_script()
         // 1. Register an import map given el's relevant global object and el's result.
         m_result.get<GC::Ref<ImportMapParseResult>>()->register_import_map(as<Window>(relevant_global_object(*this)));
     }
+#ifdef LADYBIRD_ENABLE_PYTHON
+    // Non-standard: run the python script via the embedded interpreter.
+    else if (m_script_type == ScriptType::Python) {
+        as<PythonScript>(*m_result.get<GC::Ref<Script>>()).run();
+    }
+#endif
 
     // 7. Decrement the ignore-destructive-writes counter of document, if it was incremented in the earlier step.
     if (incremented_destructive_writes_counter)
@@ -277,6 +286,12 @@ void HTMLScriptElement::prepare_script()
         m_script_type = ScriptType::ImportMap;
     }
     // FIXME: 13. Otherwise, if the script block's type string is an ASCII case-insensitive match for the string "speculationrules", then set el's type to "speculationrules".
+#ifdef LADYBIRD_ENABLE_PYTHON
+    // Non-standard: route "text/python" to the embedded CPython prototype.
+    else if (script_block_type.equals_ignoring_ascii_case("text/python"sv)) {
+        m_script_type = ScriptType::Python;
+    }
+#endif
     // 14. Otherwise, return. (No script is executed, and el's type is left as null.)
     else {
         VERIFY(m_script_type == ScriptType::Null);
@@ -540,6 +555,13 @@ void HTMLScriptElement::prepare_script()
             mark_as_ready(Result(move(result)));
         }
         // FIXME: -> "speculationrules"
+#ifdef LADYBIRD_ENABLE_PYTHON
+        // Non-standard: inline python scripts are ready immediately, like classic scripts.
+        else if (m_script_type == ScriptType::Python) {
+            auto script = PythonScript::create(m_document->url().to_byte_string(), source_text_utf8, settings_object, base_url);
+            mark_as_ready(Result(move(script)));
+        }
+#endif
     }
 
     // 36. If el's type is "classic" and el has a src attribute, or el's type is "module":

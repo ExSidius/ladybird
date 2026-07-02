@@ -1,0 +1,5 @@
+p exists: true
+p.textContent: hello from python (updated)
+p.getAttribute(id): made-by-python
+clicked exists: true
+clicked.textContent: clicked: click

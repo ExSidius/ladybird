@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Python scripting demo</title>
+<style>
+body { font-family: sans-serif; margin: 2rem; }
+#out p { margin: 0.25rem 0; }
+</style>
+</head>
+<body>
+<h1 id="title">Python in Ladybird</h1>
+<button id="btn">Click me</button>
+<div id="out"></div>
+<!-- Note: python source must start at column 0 - top-level Python code cannot be indented. -->
+<script type="text/python">
+title = document.getElementById("title")
+title.setAttribute("style", "color: rebeccapurple")
+
+out = document.getElementById("out")
+p = document.createElement("p")
+p.appendChild(document.createTextNode("Hello from CPython"))
+out.appendChild(p)
+p.textContent = p.textContent + " (mutated via textContent)"
+
+clicks = {"count": 0}
+
+def on_click(event):
+    clicks["count"] += 1
+    line = document.createElement("p")
+    line.textContent = "click #%d (event type: %s)" % (clicks["count"], event["type"])
+    out.appendChild(line)
+
+document.getElementById("btn").addEventListener("click", on_click)
+
+print("python demo script finished; document title element:", title.textContent)
+</script>
+</body>
+</html>

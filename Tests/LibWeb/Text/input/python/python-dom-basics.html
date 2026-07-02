@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<div id="out"></div>
+<button id="btn">go</button>
+<script src="../include.js"></script>
+<script type="text/python">
+out = document.getElementById("out")
+
+p = document.createElement("p")
+p.setAttribute("id", "made-by-python")
+p.appendChild(document.createTextNode("hello from python"))
+out.appendChild(p)
+
+p.textContent = p.textContent + " (updated)"
+
+def on_click(event):
+    line = document.createElement("p")
+    line.setAttribute("id", "clicked")
+    line.textContent = "clicked: " + event["type"]
+    document.getElementById("out").appendChild(line)
+
+document.getElementById("btn").addEventListener("click", on_click)
+</script>
+<script>
+    test(() => {
+        const p = document.getElementById("made-by-python");
+        println("p exists: " + (p !== null));
+        println("p.textContent: " + p.textContent);
+        println("p.getAttribute(id): " + p.getAttribute("id"));
+
+        document.getElementById("btn").click();
+
+        const clicked = document.getElementById("clicked");
+        println("clicked exists: " + (clicked !== null));
+        println("clicked.textContent: " + clicked.textContent);
+    });
+</script>

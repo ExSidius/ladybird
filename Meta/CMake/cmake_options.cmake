@@ -11,6 +11,8 @@ option(INCLUDE_WASM_SPEC_TESTS "Download and include the WebAssembly spec testsu
 set(LADYBIRD_CACHE_DIR "${PROJECT_BINARY_DIR}/../caches" CACHE PATH "Location of shared cache of downloaded files")
 option(ENABLE_NETWORK_DOWNLOADS "Allow downloads of required files. If OFF, required files must already be present in LADYBIRD_CACHE_DIR" ON)
 
+option(ENABLE_PYTHON_SCRIPTING "Embed CPython to execute <script type=\"text/python\"> (prototype)" ON)
+
 option(ENABLE_CLANG_PLUGINS "Enable building with the Clang plugins" OFF)
 option(ENABLE_CLANG_PLUGINS_INVALID_FUNCTION_MEMBERS "Enable detecting invalid function types as members of GC-allocated objects" OFF)
 
