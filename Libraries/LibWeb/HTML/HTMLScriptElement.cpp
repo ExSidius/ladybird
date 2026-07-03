@@ -27,6 +27,7 @@
 #include <LibWeb/MimeSniff/MimeType.h>
 #include <LibWeb/TrustedTypes/RequireTrustedTypesForDirective.h>
 #include <LibWeb/TrustedTypes/TrustedTypePolicy.h>
+#include <LibWeb/WebAssembly/DOMHost/WasmDOMScript.h>
 
 namespace Web::HTML {
 
@@ -191,6 +192,17 @@ void HTMLScriptElement::execute_script()
         // 1. Register an import map given el's relevant global object and el's result.
         m_result.get<GC::Ref<ImportMapParseResult>>()->register_import_map(as<Window>(relevant_global_object(*this)));
     }
+    // Non-standard: run the wasm-dom module. No JS executes on this path.
+    else if (m_script_type == ScriptType::WasmDOM) {
+        // Prototype deviation from classic-script semantics: link/instantiation/trap
+        // failures fire "error" at the element instead of "load".
+        if (!as<Web::WebAssembly::DOMHost::WasmDOMScript>(*m_result.get<GC::Ref<Script>>()).run()) {
+            if (incremented_destructive_writes_counter)
+                document->decrement_ignore_destructive_writes_counter();
+            dispatch_event(DOM::Event::create(realm(), HTML::EventNames::error));
+            return;
+        }
+    }
 
     // 7. Decrement the ignore-destructive-writes counter of document, if it was incremented in the earlier step.
     if (incremented_destructive_writes_counter)
@@ -277,6 +289,10 @@ void HTMLScriptElement::prepare_script()
         m_script_type = ScriptType::ImportMap;
     }
     // FIXME: 13. Otherwise, if the script block's type string is an ASCII case-insensitive match for the string "speculationrules", then set el's type to "speculationrules".
+    // Non-standard: route "application/wasm-dom" to the embedded WebAssembly DOM host (prototype).
+    else if (script_block_type.equals_ignoring_ascii_case("application/wasm-dom"sv)) {
+        m_script_type = ScriptType::WasmDOM;
+    }
     // 14. Otherwise, return. (No script is executed, and el's type is left as null.)
     else {
         VERIFY(m_script_type == ScriptType::Null);
@@ -494,6 +510,11 @@ void HTMLScriptElement::prepare_script()
             // Fetch an external module script graph given url, settings object, options, and onComplete.
             fetch_external_module_script_graph(realm(), *url, settings_object, options, on_complete);
         }
+        // Non-standard: -> "wasm-dom"
+        else if (m_script_type == ScriptType::WasmDOM) {
+            // Fetch the module bytes with classic-script request semantics; no text decoding.
+            fetch_wasm_dom_script(*this, *url, settings_object, move(options), classic_script_cors_setting, on_complete);
+        }
     }
 
     // 35. If el does not have a src content attribute:
@@ -540,10 +561,19 @@ void HTMLScriptElement::prepare_script()
             mark_as_ready(Result(move(result)));
         }
         // FIXME: -> "speculationrules"
+        // Non-standard: -> "wasm-dom" (binary format; inline modules are not supported)
+        else if (m_script_type == ScriptType::WasmDOM) {
+            queue_an_element_task(HTML::Task::Source::DOMManipulation, [this] {
+                dispatch_event(DOM::Event::create(realm(), HTML::EventNames::error));
+            });
+            return;
+        }
     }
 
     // 36. If el's type is "classic" and el has a src attribute, or el's type is "module":
-    if ((m_script_type == ScriptType::Classic && has_attribute(HTML::AttributeNames::src)) || m_script_type == ScriptType::Module) {
+    // Non-standard: external wasm-dom scripts use the same scheduling machinery as external classic scripts.
+    if ((m_script_type == ScriptType::Classic && has_attribute(HTML::AttributeNames::src)) || m_script_type == ScriptType::Module
+        || (m_script_type == ScriptType::WasmDOM && has_attribute(HTML::AttributeNames::src))) {
         // 1. Assert: el's result is "uninitialized".
         // FIXME: I believe this step to be a spec bug, and it should be removed: https://github.com/whatwg/html/issues/8534
 

@@ -1,0 +1,4 @@
+p exists: true
+p.getAttribute(id): made-by-wasm
+p.textContent: hello from wasm
+out.childElementCount: 1

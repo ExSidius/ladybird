@@ -1,0 +1,109 @@
+# WASM-DOM host interface (prototype)
+
+A JS-free path for a WebAssembly module to manipulate the DOM. A page loads
+`<script type="application/wasm-dom" src="app.wasm">`; the module imports DOM
+operations from a host interface named `dom`, implemented in C++ directly
+against LibWeb — no JS import object, no JS glue, no JavaScript execution.
+Any language that compiles to wasm32 gets DOM access and inherits the WASM
+sandbox. This is architecturally natural in Ladybird because LibWasm and LibJS
+are separate libraries and the DOM is plain C++ (in Chromium, WASM lives
+inside V8 and the DOM's bindings assume it).
+
+**Scope note (the realm question).** A realm-free DOM is impossible in LibWeb:
+every DOM node *is a* `JS::Object`, node allocation resolves prototypes through
+the realm's intrinsics, and the VM exists from WebContent startup. What this
+prototype guarantees instead: on the wasm-dom path **no JavaScript is ever
+parsed or executed** — the realm exists but is inert. `WasmDOMScript::run()`
+deliberately never touches the JS execution context stack.
+
+## Architecture
+
+A *host interface* (a "platform" in Roc terms), not a runtime:
+
+- `Libraries/LibWeb/WebAssembly/DOMHost/DOMHostInstance.{h,cpp}` — one GC cell
+  per script: owns the `Wasm::AbstractMachine` (heap-allocated `OwnPtr`, never
+  moves), the parsed module, the module instance, and the **handle table**.
+- `Libraries/LibWeb/WebAssembly/DOMHost/HostFunctions.{h,cpp}` — resolves the
+  module's `dom.*` imports to `Wasm::HostFunction`s allocated in the instance's
+  own store (the JS-free analogue of `WebAssembly.cpp:instantiate_module`).
+- `Libraries/LibWeb/WebAssembly/DOMHost/WasmDOMScript.{h,cpp}` — the
+  `HTML::Script` subclass; `run()` = validate → link → instantiate → `_start`.
+- Routing in `HTMLScriptElement` (`ScriptType::WasmDOM` arms), raw-bytes fetch
+  in `HTML/Scripting/Fetching.cpp` (`fetch_wasm_dom_script`, classic-script
+  request semantics, no text decoding).
+
+### ABI (v0)
+
+- wasm32 only; import module name `dom`. The guest must export `memory`,
+  `_start` (called once after instantiation), and — for events —
+  `__indirect_function_table`.
+- **Handles**: opaque `i32`; generational (8-bit generation | 24-bit index into
+  a per-instance table); `0` is null; slot 0 reserved. Stale/wrong-kind handle →
+  trap. `dom.release(handle)` frees (idempotent). A live handle pins its node.
+- **Handle entries are traced `GC::Ptr`s** (visited by `DOMHostInstance`), not
+  `GC::Root`s: node ↔ instance cycles are ordinary same-heap GC cycles and are
+  collected when the document goes away. No listener-cycle leak by design.
+- **Strings** guest→host: `(ptr: i32, len: i32)` UTF-8, bounds-checked; OOB or
+  invalid UTF-8 → trap. Host→guest: caller-provided buffer `(dst_ptr, dst_cap)`;
+  host writes `min(len, cap)` bytes and returns the full length; guest retries
+  with a larger buffer if `len > cap`.
+- **Callbacks** (M2): `i32` index into the guest's exported funcref table plus
+  `i32 user_data`; uniform signature `(i32 arg, i32 user_data) -> ()`.
+- **Errors**: expected failures return `0`/`-1`; ABI violations trap
+  (`Wasm::Trap::from_string`), aborting the guest invocation. `ExceptionOr` is
+  converted at the boundary; nothing C++ crosses into the machine.
+
+### Host functions
+
+| import | signature | notes |
+|---|---|---|
+| `get_element_by_id(ptr,len)` | (i32,i32)→i32 | 0 if not found |
+| `create_element(ptr,len)` | (i32,i32)→i32 | HTML namespace; 0 on invalid name |
+| `create_text_node(ptr,len)` | (i32,i32)→i32 | |
+| `append_child(parent,child)` | (i32,i32)→i32 | −1 if rejected |
+| `set_attribute(node,nptr,nlen,vptr,vlen)` | (i32×5)→i32 | element handles only (else trap) |
+| `get_attribute(node,nptr,nlen,dst,cap)` | (i32×5)→i32 | M1; −1 if absent, else full length |
+| `text_content_get(node,dst,cap)` | (i32×3)→i32 | M1; −1 if null |
+| `text_content_set(node,ptr,len)` | (i32×3)→i32 | M1 |
+| `add_event_listener(node,tptr,tlen,cb,user)` | (i32×5)→i32 | M2 |
+| `event_type(event,dst,cap)` | (i32×3)→i32 | M2 |
+| `release(handle)` | (i32)→() | |
+
+All parameters/results are i32, so a signature is fully described by its arity;
+declared types are checked against the table at link time.
+
+### Events (M2)
+
+There is no non-JS listener slot in the engine, so `DOM::DOMEventListener`
+gains a second nullable field (`native_callback`) and
+`EventDispatcher::inner_invoke` gets a native branch that skips the JS-only
+block (realm lookup, Window current-event bookkeeping,
+`call_user_object_operation`, exception reporting) and calls the guest export
+via `machine.invoke`. No `prepare_to_run_callback`: the task-boundary microtask
+checkpoint covers the bookkeeping. `EventTarget::add_an_event_listener` needs
+null-guards (its dedup path dereferences the JS callback unconditionally).
+
+### Async (explicitly out of scope, designed)
+
+Callback-style host ops (`host_fetch`, `host_set_timeout`) that return
+immediately and later deliver completion by queueing a task on the HTML event
+loop that `machine.invoke`s a guest export. The guest's own async runtime (if
+any) rides inside the module; the host provides operations and wakeups only.
+Not in v0.
+
+## Verification
+
+- Text tests: `Tests/LibWeb/Text/input/Wasm/wasm-dom-*.html` with committed
+  binary fixtures under `Tests/LibWeb/Text/data/wasm-dom/` (`.wat` sources
+  alongside as documentation; no wasm toolchain needed to build or test).
+- JS in the test pages is verification harness only — it inspects the DOM the
+  wasm module built; the wasm path itself never runs JS.
+- Full `test-web` + `test LibWeb` regression (script-element and event-dispatch
+  edits touch every page).
+
+## Out of scope (v0)
+
+Async host ops, WebIDL-driven host-function codegen, JSPI/stack switching,
+MIME enforcement on the module response, inline wasm (binary format), state
+sharing between multiple wasm-dom scripts, cross-heap cycle work beyond the
+traced-handle design.

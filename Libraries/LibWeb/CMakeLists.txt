@@ -1100,6 +1100,9 @@ set(SOURCES
     WebLocks/LockManager.cpp
     WebLocks/LockRequest.cpp
     WebLocks/NavigatorLocks.cpp
+    WebAssembly/DOMHost/DOMHostInstance.cpp
+    WebAssembly/DOMHost/HostFunctions.cpp
+    WebAssembly/DOMHost/WasmDOMScript.cpp
     WebAssembly/Global.cpp
     WebAssembly/Instance.cpp
     WebAssembly/Memory.cpp

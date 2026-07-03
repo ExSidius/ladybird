@@ -1286,6 +1286,13 @@ class WebAssemblyModule;
 
 }
 
+namespace Web::WebAssembly::DOMHost {
+
+class DOMHostInstance;
+class WasmDOMScript;
+
+}
+
 namespace Web::WebAudio {
 
 class AudioBuffer;

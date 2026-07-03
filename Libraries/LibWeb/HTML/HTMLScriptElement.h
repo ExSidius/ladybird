@@ -140,6 +140,7 @@ private:
         Classic,
         Module,
         ImportMap,
+        WasmDOM,
     };
 
     // https://html.spec.whatwg.org/multipage/scripting.html#concept-script-type

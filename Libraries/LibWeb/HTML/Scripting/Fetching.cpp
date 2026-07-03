@@ -7,6 +7,7 @@
  */
 
 #include <AK/Array.h>
+#include <AK/MemoryStream.h>
 #include <AK/NumericLimits.h>
 #include <AK/StringBuilder.h>
 #include <AK/Utf16String.h>
@@ -47,6 +48,7 @@
 #include <LibWeb/Infra/Strings.h>
 #include <LibWeb/Loader/ResourceLoader.h>
 #include <LibWeb/MimeSniff/MimeType.h>
+#include <LibWeb/WebAssembly/DOMHost/WasmDOMScript.h>
 #include <LibWeb/WebAssembly/WebAssemblyModule.h>
 
 namespace Web::HTML {
@@ -844,6 +846,49 @@ void fetch_classic_script(GC::Ref<HTMLScriptElement> element, URL::URL const& ur
                     schedule_bytecode_cache_generation(move(source_code_for_cache), JS::RustIntegration::ProgramType::Script, 1, bytecode_cache_context.release_value(), move(install_target), source_hash.release_value());
                 }
             });
+    };
+
+    Fetch::Fetching::fetch(element->realm(), request, Fetch::Infrastructure::FetchAlgorithms::create(vm, move(fetch_algorithms_input)));
+}
+
+// Non-standard: fetch the module for a <script type="application/wasm-dom"> element.
+// Mirrors "fetch a classic script" through the request setup, then hands the raw body
+// bytes to the wasm parser instead of decoding them as text.
+void fetch_wasm_dom_script(GC::Ref<HTMLScriptElement> element, URL::URL const& url, EnvironmentSettingsObject& settings_object, ScriptFetchOptions options, CORSSettingAttribute cors_setting, OnFetchScriptComplete on_complete)
+{
+    auto& realm = element->realm();
+    auto& vm = realm.vm();
+
+    // Create a potential-CORS request given url, "script", and the CORS setting, exactly
+    // as for a classic script, so crossorigin/nonce/integrity behave identically.
+    auto request = create_potential_CORS_request(vm, url, Fetch::Infrastructure::Request::Destination::Script, cors_setting);
+    request->set_client(&settings_object);
+    request->set_initiator_type(Fetch::Infrastructure::Request::InitiatorType::Script);
+    set_up_classic_script_request(*request, options);
+
+    Fetch::Infrastructure::FetchAlgorithms::Input fetch_algorithms_input {};
+    fetch_algorithms_input.process_response_consume_body = [element_root = GC::make_root(element), &settings_object, on_complete = move(on_complete)](auto response, auto body_bytes) {
+        response = response->unsafe_response();
+
+        if (body_bytes.template has<Empty>() || body_bytes.template has<Fetch::Infrastructure::FetchAlgorithms::ConsumeBodyFailureTag>() || !Fetch::Infrastructure::is_ok_status(response->status())) {
+            on_complete->function()(nullptr);
+            return;
+        }
+
+        // FIXME: The WebAssembly web API requires an `application/wasm` MIME type for wasm
+        //        fetched through its APIs; decide whether to enforce that here too.
+        auto body = body_bytes.template get<Core::ImmutableBytes>();
+        FixedMemoryStream stream { body.bytes() };
+        auto module_or_error = Wasm::Module::parse(stream);
+        if (module_or_error.is_error()) {
+            dbgln("wasm-dom: failed to parse module: {}", Wasm::parse_error_to_byte_string(module_or_error.error()));
+            on_complete->function()(nullptr);
+            return;
+        }
+
+        auto response_url = response->url().value_or({});
+        auto script = Web::WebAssembly::DOMHost::WasmDOMScript::create(response_url, response_url.to_byte_string(), settings_object, element_root->document(), module_or_error.release_value());
+        on_complete->function()(script);
     };
 
     Fetch::Fetching::fetch(element->realm(), request, Fetch::Infrastructure::FetchAlgorithms::create(vm, move(fetch_algorithms_input)));

@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    // Failures on the wasm-dom path (missing resource, unparsable module) must fire
+    // "error" at the script element and must not crash or fire "load".
+    asyncTest(async (done) => {
+        function tryLoad(src, label) {
+            return new Promise((resolve) => {
+                const script = document.createElement("script");
+                script.type = "application/wasm-dom";
+                script.src = src;
+                script.addEventListener("error", () => { println(label + ": error event"); resolve(); });
+                script.addEventListener("load", () => { println(label + ": unexpected load event"); resolve(); });
+                document.body.appendChild(script);
+            });
+        }
+
+        await tryLoad("../../data/wasm-dom/does-not-exist.wasm", "missing");
+        await tryLoad("../../data/wasm-dom/truncated.wasm", "truncated");
+        println("page still alive");
+        done();
+    });
+</script>

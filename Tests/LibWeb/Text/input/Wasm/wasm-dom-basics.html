@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<div id="out"></div>
+<!-- The wasm-dom script is parser-blocking, so its _start has run before the harness below. -->
+<script type="application/wasm-dom" src="../../data/wasm-dom/hello-dom.wasm"></script>
+<script src="../include.js"></script>
+<script>
+    test(() => {
+        const p = document.querySelector("#out > p");
+        println("p exists: " + (p !== null));
+        println("p.getAttribute(id): " + p.getAttribute("id"));
+        println("p.textContent: " + p.textContent);
+        println("out.childElementCount: " + document.getElementById("out").childElementCount);
+    });
+</script>
