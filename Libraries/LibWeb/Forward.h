@@ -1289,6 +1289,7 @@ class WebAssemblyModule;
 namespace Web::WebAssembly::DOMHost {
 
 class DOMHostInstance;
+class NativeEventCallback;
 class WasmDOMScript;
 
 }

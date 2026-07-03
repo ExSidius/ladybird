@@ -28,6 +28,7 @@
 #include <LibWeb/HTML/Window.h>
 #include <LibWeb/HTML/WindowOrWorkerGlobalScope.h>
 #include <LibWeb/UIEvents/MouseEvent.h>
+#include <LibWeb/WebAssembly/DOMHost/NativeEventCallback.h>
 #include <LibWeb/WebIDL/AbstractOperations.h>
 
 namespace Web::DOM {
@@ -75,6 +76,20 @@ bool EventDispatcher::inner_invoke(Event& event, Vector<GC::Root<DOM::DOMEventLi
         // 5. If listener’s once is true, then remove an event listener given event’s currentTarget attribute value and listener.
         if (listener->once)
             event.current_target()->remove_an_event_listener(*listener);
+
+        // Non-standard: native (wasm-dom) listeners bypass the JS callback machinery
+        // below entirely — steps 6-13 (the realm/global lookup, Window current-event
+        // bookkeeping, call_user_object_operation, and exception reporting) are all
+        // JS-callback concerns. A trap inside the callback is logged and swallowed.
+        if (listener->native_callback) {
+            if (listener->passive == true)
+                event.set_in_passive_listener(true);
+            listener->native_callback->invoke(event);
+            event.set_in_passive_listener(false);
+            if (event.should_stop_immediate_propagation())
+                break;
+            continue;
+        }
 
         // 6. Let global be listener callback’s associated Realm’s global object.
         auto& callback = listener->callback->callback();

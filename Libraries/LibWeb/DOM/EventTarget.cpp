@@ -270,7 +270,8 @@ void EventTarget::add_an_event_listener(DOMEventListener& listener)
         return;
 
     // 3. If listener’s callback is null, then return.
-    if (!listener.callback)
+    // Non-standard: a native (wasm-dom) callback counts as a callback.
+    if (!listener.callback && !listener.native_callback)
         return;
 
     // 4. If listener’s passive is null, then set it to the default passive value given listener’s type and eventTarget.
@@ -281,9 +282,13 @@ void EventTarget::add_an_event_listener(DOMEventListener& listener)
     // 5. If eventTarget’s event listener list does not contain an event listener whose type is listener’s type, callback is listener’s callback,
     //    and capture is listener’s capture, then append listener to eventTarget’s event listener list.
     auto it = event_listener_list.find_if([&](auto& entry) {
-        return entry->type == listener.type
-            && entry->callback->callback().callback == listener.callback->callback().callback
-            && entry->capture == listener.capture;
+        if (entry->type != listener.type || entry->capture != listener.capture)
+            return false;
+        // Non-standard: native (wasm-dom) callbacks compare by identity; a native and
+        // a JS listener never compare equal.
+        if (entry->native_callback || listener.native_callback)
+            return entry->native_callback == listener.native_callback;
+        return entry->callback->callback().callback == listener.callback->callback().callback;
     });
     if (it == event_listener_list.end()) {
         event_listener_list.append(listener);

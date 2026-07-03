@@ -4,14 +4,17 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
+#include <LibWeb/DOM/DOMEventListener.h>
 #include <LibWeb/DOM/Document.h>
 #include <LibWeb/DOM/Element.h>
 #include <LibWeb/DOM/ElementFactory.h>
+#include <LibWeb/DOM/Event.h>
 #include <LibWeb/DOM/Node.h>
 #include <LibWeb/DOM/Text.h>
 #include <LibWeb/Namespace.h>
 #include <LibWeb/WebAssembly/DOMHost/DOMHostInstance.h>
 #include <LibWeb/WebAssembly/DOMHost/HostFunctions.h>
+#include <LibWeb/WebAssembly/DOMHost/NativeEventCallback.h>
 
 namespace Web::WebAssembly::DOMHost {
 
@@ -120,6 +123,31 @@ static Wasm::Result text_content_set(DOMHostInstance& instance, Span<Wasm::Value
     return return_i32(0);
 }
 
+// dom.add_event_listener(node: i32, type_ptr: i32, type_len: i32, callback: i32, user_data: i32) -> status: i32
+// `callback` is an index into the guest's exported funcref table; the function there
+// must have signature (i32 event_handle, i32 user_data) -> ().
+static Wasm::Result add_event_listener(DOMHostInstance& instance, Span<Wasm::Value> arguments)
+{
+    auto node = TRY_OR_TRAP(instance.node_from_handle(arguments[0].to<i32>()));
+    auto type = TRY_OR_TRAP(instance.read_utf8_string(arguments[1].to<u32>(), arguments[2].to<u32>()));
+    auto function = TRY_OR_TRAP(instance.callback_from_table_index(arguments[3].to<u32>()));
+
+    auto& heap = instance.heap();
+    auto callback = heap.allocate<NativeEventCallback>(instance, function, arguments[4].to<i32>());
+    auto listener = heap.allocate<DOM::DOMEventListener>();
+    listener->type = FlyString { type };
+    listener->native_callback = callback;
+    node->add_an_event_listener(*listener);
+    return return_i32(0);
+}
+
+// dom.event_type(event: i32, dst_ptr: i32, dst_cap: i32) -> len: i32
+static Wasm::Result event_type(DOMHostInstance& instance, Span<Wasm::Value> arguments)
+{
+    auto event = TRY_OR_TRAP(instance.event_from_handle(arguments[0].to<i32>()));
+    return return_i32(TRY_OR_TRAP(instance.write_string(event->type().bytes_as_string_view(), arguments[1].to<u32>(), arguments[2].to<u32>())));
+}
+
 // dom.release(handle: i32) -> ()
 static Wasm::Result release(DOMHostInstance& instance, Span<Wasm::Value> arguments)
 {
@@ -143,6 +171,8 @@ static constexpr auto s_host_functions = to_array<HostFunctionSpec>({
     { "get_attribute"sv, get_attribute, 5, 1 },
     { "text_content_get"sv, text_content_get, 3, 1 },
     { "text_content_set"sv, text_content_set, 3, 1 },
+    { "add_event_listener"sv, add_event_listener, 5, 1 },
+    { "event_type"sv, event_type, 3, 1 },
     { "release"sv, release, 1, 0 },
 });
 

@@ -31,6 +31,11 @@ public:
     ErrorOr<void, ByteString> link_and_instantiate();
     ErrorOr<void, ByteString> invoke_start();
 
+    // Resolve a guest callback: an index into the exported funcref table, checked
+    // to be a function of type (i32, i32) -> ().
+    ErrorOr<Wasm::FunctionAddress, Wasm::Trap> callback_from_table_index(u32 index);
+    void invoke_callback(Wasm::FunctionAddress, i32 argument, i32 user_data);
+
     enum class HandleKind : u8 {
         Node,
         Event,
@@ -38,6 +43,7 @@ public:
 
     i32 allocate_handle(GC::Cell&, HandleKind);
     ErrorOr<GC::Ref<DOM::Node>, Wasm::Trap> node_from_handle(i32);
+    ErrorOr<GC::Ref<DOM::Event>, Wasm::Trap> event_from_handle(i32);
     void release_handle(i32);
 
     ErrorOr<String, Wasm::Trap> read_utf8_string(u32 pointer, u32 length);
@@ -78,6 +84,11 @@ private:
     // Slot 0 is reserved so that handle 0 always means null.
     Vector<HandleEntry> m_handles;
     Vector<u32> m_free_handle_indices;
+
+    // Same-machine reentrant invocation cannot happen in v0 (no host function
+    // dispatches events synchronously, and a module cannot re-run its own script
+    // element); this enforces that assumption.
+    bool m_invoking { false };
 };
 
 }

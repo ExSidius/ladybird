@@ -7,6 +7,7 @@
 #include <LibWeb/DOM/AbortSignal.h>
 #include <LibWeb/DOM/DOMEventListener.h>
 #include <LibWeb/DOM/IDLEventListener.h>
+#include <LibWeb/WebAssembly/DOMHost/NativeEventCallback.h>
 
 namespace Web::DOM {
 
@@ -19,6 +20,7 @@ void DOMEventListener::visit_edges(Cell::Visitor& visitor)
 {
     Base::visit_edges(visitor);
     visitor.visit(callback);
+    visitor.visit(native_callback);
     visitor.visit(signal);
 }
 

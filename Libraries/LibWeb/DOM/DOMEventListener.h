@@ -30,6 +30,10 @@ public:
     // callback (null or an EventListener object)
     GC::Ptr<IDLEventListener> callback;
 
+    // Non-standard: a native (non-JS) callback, currently a wasm-dom guest function.
+    // Exactly one of callback / native_callback is set on a registered listener.
+    GC::Ptr<WebAssembly::DOMHost::NativeEventCallback> native_callback;
+
     // signal (null or an AbortSignal object)
     GC::Ptr<DOM::AbortSignal> signal;
 

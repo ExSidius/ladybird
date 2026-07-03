@@ -5,8 +5,10 @@
  */
 
 #include <AK/Checked.h>
+#include <AK/TemporaryChange.h>
 #include <LibWasm/AbstractMachine/Validator.h>
 #include <LibWeb/DOM/Document.h>
+#include <LibWeb/DOM/Event.h>
 #include <LibWeb/DOM/Node.h>
 #include <LibWeb/WebAssembly/DOMHost/DOMHostInstance.h>
 #include <LibWeb/WebAssembly/DOMHost/HostFunctions.h>
@@ -90,10 +92,50 @@ ErrorOr<void, ByteString> DOMHostInstance::link_and_instantiate()
 
 ErrorOr<void, ByteString> DOMHostInstance::invoke_start()
 {
+    VERIFY(!m_invoking);
+    TemporaryChange invoking { m_invoking, true };
     auto result = m_machine->invoke(*m_start, {});
     if (result.is_trap())
         return ByteString::formatted("_start trapped: {}", result.trap().format());
     return {};
+}
+
+ErrorOr<Wasm::FunctionAddress, Wasm::Trap> DOMHostInstance::callback_from_table_index(u32 index)
+{
+    if (!m_function_table.has_value())
+        return Wasm::Trap::from_string("module does not export its function table as \"__indirect_function_table\""sv);
+    auto* table = m_machine->store().get(*m_function_table);
+    if (!table)
+        return Wasm::Trap::from_string("exported function table is gone"sv);
+    if (index >= table->elements().size())
+        return Wasm::Trap::from_string(ByteString::formatted("callback index {} is outside the function table", index));
+
+    auto const* function_reference = table->elements()[index].ref().get_pointer<Wasm::Reference::Func>();
+    if (!function_reference)
+        return Wasm::Trap::from_string(ByteString::formatted("function table slot {} does not hold a function", index));
+
+    auto const* function_instance = m_machine->store().get(function_reference->address);
+    VERIFY(function_instance);
+    auto const& type = function_instance->visit([](auto const& function) -> Wasm::FunctionType const& { return function.type(); });
+    bool signature_matches = type.parameters().size() == 2 && type.results().is_empty()
+        && type.parameters()[0].kind() == Wasm::ValueType::Kind::I32
+        && type.parameters()[1].kind() == Wasm::ValueType::Kind::I32;
+    if (!signature_matches)
+        return Wasm::Trap::from_string(ByteString::formatted("callback {} must have signature (i32, i32) -> ()", index));
+
+    return function_reference->address;
+}
+
+void DOMHostInstance::invoke_callback(Wasm::FunctionAddress function, i32 argument, i32 user_data)
+{
+    VERIFY(!m_invoking);
+    TemporaryChange invoking { m_invoking, true };
+    auto result = m_machine->invoke(function, { Wasm::Value(argument), Wasm::Value(user_data) });
+    // A trapping event callback must not take down the renderer or affect other
+    // listeners; log it and move on (mirrors how JS listener exceptions are
+    // reported rather than propagated).
+    if (result.is_trap())
+        dbgln("wasm-dom: event callback trapped: {}", result.trap().format());
 }
 
 i32 DOMHostInstance::allocate_handle(GC::Cell& cell, HandleKind kind)
@@ -132,6 +174,12 @@ ErrorOr<GC::Ref<DOM::Node>, Wasm::Trap> DOMHostInstance::node_from_handle(i32 ha
 {
     auto* entry = TRY(entry_from_handle(handle, HandleKind::Node));
     return *as<DOM::Node>(entry->cell.ptr());
+}
+
+ErrorOr<GC::Ref<DOM::Event>, Wasm::Trap> DOMHostInstance::event_from_handle(i32 handle)
+{
+    auto* entry = TRY(entry_from_handle(handle, HandleKind::Event));
+    return *as<DOM::Event>(entry->cell.ptr());
 }
 
 void DOMHostInstance::release_handle(i32 handle)

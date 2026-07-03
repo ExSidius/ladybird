@@ -1,0 +1,4 @@
+li count after 2 clicks: 2
+li[0].textContent: click
+li[0].getAttribute(data-user): yes
+li count after 3rd click: 3

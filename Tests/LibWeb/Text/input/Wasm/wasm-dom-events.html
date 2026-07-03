@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<div id="out"></div>
+<button id="btn">go</button>
+<script type="application/wasm-dom" src="../../data/wasm-dom/events.wasm"></script>
+<script src="../include.js"></script>
+<script>
+    // The wasm module registered a native click listener during _start. Clicks here
+    // are genuine EventDispatcher dispatches into the wasm callback; JS only drives
+    // and verifies.
+    test(() => {
+        const btn = document.getElementById("btn");
+        btn.click();
+        btn.click();
+        const items = document.querySelectorAll("#out > li");
+        println("li count after 2 clicks: " + items.length);
+        println("li[0].textContent: " + items[0].textContent);
+        println("li[0].getAttribute(data-user): " + items[0].getAttribute("data-user"));
+        btn.click();
+        println("li count after 3rd click: " + document.querySelectorAll("#out > li").length);
+    });
+</script>

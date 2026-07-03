@@ -1102,6 +1102,7 @@ set(SOURCES
     WebLocks/NavigatorLocks.cpp
     WebAssembly/DOMHost/DOMHostInstance.cpp
     WebAssembly/DOMHost/HostFunctions.cpp
+    WebAssembly/DOMHost/NativeEventCallback.cpp
     WebAssembly/DOMHost/WasmDOMScript.cpp
     WebAssembly/Global.cpp
     WebAssembly/Instance.cpp
