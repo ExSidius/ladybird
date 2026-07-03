@@ -19,6 +19,7 @@
 #include <LibWeb/HTML/Scripting/Environments.h>
 #include <LibWeb/Platform/Timer.h>
 #include <LibWeb/WebAssembly/DOMHost/DOMHostInstance.h>
+#include <LibWeb/WebIDL/DOMException.h>
 #include <LibWeb/WebAssembly/DOMHost/HostFunctions.h>
 
 namespace Web::WebAssembly::DOMHost {
@@ -164,7 +165,7 @@ i32 DOMHostInstance::allocate_handle(GC::Cell& cell, HandleKind kind)
     return static_cast<i32>((static_cast<u32>(m_handles[index].generation) << handle_index_bits) | index);
 }
 
-ErrorOr<DOMHostInstance::HandleEntry*, Wasm::Trap> DOMHostInstance::entry_from_handle(i32 handle, HandleKind kind)
+ErrorOr<DOMHostInstance::HandleEntry*, Wasm::Trap> DOMHostInstance::entry_from_handle(i32 handle, Optional<HandleKind> kind)
 {
     auto raw = static_cast<u32>(handle);
     auto index = raw & handle_index_mask;
@@ -174,9 +175,41 @@ ErrorOr<DOMHostInstance::HandleEntry*, Wasm::Trap> DOMHostInstance::entry_from_h
     auto& entry = m_handles[index];
     if (!entry.cell || entry.generation != generation)
         return Wasm::Trap::from_string(ByteString::formatted("stale dom handle {:#x}", raw));
-    if (entry.kind != kind)
+    if (kind.has_value() && entry.kind != *kind)
         return Wasm::Trap::from_string(ByteString::formatted("dom handle {:#x} has the wrong kind", raw));
     return &entry;
+}
+
+i32 DOMHostInstance::allocate_handle_for_cell(GC::Cell& cell)
+{
+    auto kind = HandleKind::Object;
+    if (is<DOM::Node>(cell))
+        kind = HandleKind::Node;
+    else if (is<DOM::Event>(cell))
+        kind = HandleKind::Event;
+    return allocate_handle(cell, kind);
+}
+
+ErrorOr<GC::Ref<GC::Cell>, Wasm::Trap> DOMHostInstance::cell_from_handle(i32 handle)
+{
+    auto* entry = TRY(entry_from_handle(handle, {}));
+    return GC::Ref { *entry->cell };
+}
+
+void DOMHostInstance::set_last_error(WebIDL::Exception const& exception)
+{
+    m_last_error = exception.visit(
+        [](WebIDL::SimpleException const& simple) {
+            return simple.message.visit(
+                [](String const& message) { return message; },
+                [](StringView message) { return MUST(String::from_utf8(message)); });
+        },
+        [](GC::Ref<WebIDL::DOMException> const& dom_exception) {
+            return MUST(String::formatted("{}: {}", dom_exception->name(), dom_exception->message()));
+        },
+        [](JS::Completion const&) {
+            return "JavaScript completion exception"_string;
+        });
 }
 
 ErrorOr<GC::Ref<DOM::Node>, Wasm::Trap> DOMHostInstance::node_from_handle(i32 handle)

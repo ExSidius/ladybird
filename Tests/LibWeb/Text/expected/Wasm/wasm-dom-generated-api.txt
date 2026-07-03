@@ -1,0 +1,5 @@
+matches: yes
+tagName: P
+classList.contains: yes
+appendData result: hello!!
+invalid selector recorded an error: yes

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
+#include <AK/Time.h>
 #include <LibWeb/DOM/DOMEventListener.h>
 #include <LibWeb/DOM/Document.h>
 #include <LibWeb/DOM/Element.h>
@@ -196,43 +197,66 @@ static Wasm::Result release(DOMHostInstance& instance, Span<Wasm::Value> argumen
     return return_nothing();
 }
 
-struct HostFunctionSpec {
-    StringView name;
-    Wasm::Result (*function)(DOMHostInstance&, Span<Wasm::Value>);
-    size_t parameter_count { 0 };
-    size_t result_count { 0 };
-};
+// dom.last_error_message(dst_ptr: i32, dst_cap: i32) -> len: i32 (-1 if no error recorded)
+static Wasm::Result last_error_message(DOMHostInstance& instance, Span<Wasm::Value> arguments)
+{
+    auto const& error = instance.last_error();
+    if (!error.has_value())
+        return return_i32(-1);
+    return return_i32(TRY_OR_TRAP(instance.write_string(*error, arguments[0].to<u32>(), arguments[1].to<u32>())));
+}
+
+// dom.now() -> f64 milliseconds (monotonic; for benchmarks/timing)
+static Wasm::Result now(DOMHostInstance&, Span<Wasm::Value>)
+{
+    auto milliseconds = static_cast<f64>(MonotonicTime::now().nanoseconds()) / 1e6;
+    return Wasm::Result { Vector<Wasm::Value> { Wasm::Value(milliseconds) } };
+}
 
 static constexpr auto s_host_functions = to_array<HostFunctionSpec>({
-    { "get_element_by_id"sv, get_element_by_id, 2, 1 },
-    { "create_element"sv, create_element, 2, 1 },
-    { "create_text_node"sv, create_text_node, 2, 1 },
-    { "append_child"sv, append_child, 2, 1 },
-    { "set_attribute"sv, set_attribute, 5, 1 },
-    { "get_attribute"sv, get_attribute, 5, 1 },
-    { "text_content_get"sv, text_content_get, 3, 1 },
-    { "text_content_set"sv, text_content_set, 3, 1 },
-    { "add_event_listener"sv, add_event_listener, 5, 1 },
-    { "event_type"sv, event_type, 3, 1 },
-    { "set_timeout"sv, set_timeout, 3, 1 },
-    { "fetch"sv, fetch, 4, 1 },
-    { "response_status"sv, response_status, 1, 1 },
-    { "response_read"sv, response_read, 3, 1 },
-    { "release"sv, release, 1, 0 },
+    { "get_element_by_id"sv, get_element_by_id, "ii"sv, "i"sv },
+    { "create_element"sv, create_element, "ii"sv, "i"sv },
+    { "create_text_node"sv, create_text_node, "ii"sv, "i"sv },
+    { "append_child"sv, append_child, "ii"sv, "i"sv },
+    { "set_attribute"sv, set_attribute, "iiiii"sv, "i"sv },
+    { "get_attribute"sv, get_attribute, "iiiii"sv, "i"sv },
+    { "text_content_get"sv, text_content_get, "iii"sv, "i"sv },
+    { "text_content_set"sv, text_content_set, "iii"sv, "i"sv },
+    { "add_event_listener"sv, add_event_listener, "iiiii"sv, "i"sv },
+    { "event_type"sv, event_type, "iii"sv, "i"sv },
+    { "set_timeout"sv, set_timeout, "iii"sv, "i"sv },
+    { "fetch"sv, fetch, "iiii"sv, "i"sv },
+    { "response_status"sv, response_status, "i"sv, "i"sv },
+    { "response_read"sv, response_read, "iii"sv, "i"sv },
+    { "last_error_message"sv, last_error_message, "ii"sv, "i"sv },
+    { "now"sv, now, ""sv, "d"sv },
+    { "release"sv, release, "i"sv, ""sv },
 });
 
-// Every parameter and result in the "dom" interface is an i32 (handles, pointers,
-// lengths, statuses), so a signature is fully described by its arity.
+static Wasm::ValueType value_type_for_char(char c)
+{
+    switch (c) {
+    case 'I':
+        return Wasm::ValueType { Wasm::ValueType::Kind::I64 };
+    case 'f':
+        return Wasm::ValueType { Wasm::ValueType::Kind::F32 };
+    case 'd':
+        return Wasm::ValueType { Wasm::ValueType::Kind::F64 };
+    default:
+        return Wasm::ValueType { Wasm::ValueType::Kind::I32 };
+    }
+}
+
 static Wasm::FunctionType function_type_for_spec(HostFunctionSpec const& spec)
 {
     Vector<Wasm::ValueType> parameters;
-    parameters.ensure_capacity(spec.parameter_count);
-    for (size_t i = 0; i < spec.parameter_count; ++i)
-        parameters.unchecked_append(Wasm::ValueType { Wasm::ValueType::Kind::I32 });
+    parameters.ensure_capacity(spec.parameters.length());
+    for (auto c : spec.parameters)
+        parameters.unchecked_append(value_type_for_char(c));
     Vector<Wasm::ValueType> results;
-    results.ensure_capacity(spec.result_count);
-    for (size_t i = 0; i < spec.result_count; ++i)
-        results.unchecked_append(Wasm::ValueType { Wasm::ValueType::Kind::I32 });
+    results.ensure_capacity(spec.results.length());
+    for (auto c : spec.results)
+        results.unchecked_append(value_type_for_char(c));
     return Wasm::FunctionType { move(parameters), move(results) };
 }
 
@@ -268,6 +292,10 @@ ErrorOr<HashMap<Wasm::Linker::Name, Wasm::ExternValue>, ByteString> resolve_dom_
                 if (candidate.name == import_name.name.view())
                     return &candidate;
             }
+            for (auto const& candidate : generated_host_function_specs()) {
+                if (candidate.name == import_name.name.view())
+                    return &candidate;
+            }
             return nullptr;
         }();
         if (!spec)
@@ -276,7 +304,7 @@ ErrorOr<HashMap<Wasm::Linker::Name, Wasm::ExternValue>, ByteString> resolve_dom_
         auto expected_type = function_type_for_spec(*spec);
         auto const& declared_type = instance.module().type_section().types()[type_index->value()].function();
         if (!function_types_match(declared_type, expected_type))
-            return ByteString::formatted("import dom.{} has the wrong signature (expected {} i32 parameters and {} i32 results)", import_name.name, spec->parameter_count, spec->result_count);
+            return ByteString::formatted("import dom.{} has the wrong signature (expected ({}) -> ({}))", import_name.name, spec->parameters, spec->results);
 
         // The lambda captures the instance cell by reference: the host function lives
         // in the machine's store, and the machine is owned by (and dies with) the

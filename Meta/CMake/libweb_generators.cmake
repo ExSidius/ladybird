@@ -417,5 +417,27 @@ function (generate_js_bindings target)
     add_dependencies(${target} generate_exposed_interfaces)
     add_dependencies(generate_exposed_interfaces ${generated_idl_targets})
 
+    # The wasm-dom host interface: a second backend over the same IDL corpus,
+    # emitting Wasm host functions instead of JS bindings.
+    set(wasm_dom_generator "${LADYBIRD_SOURCE_DIR}/Meta/Generators/generate_wasm_dom_bindings.py")
+    set(wasm_dom_generated_sources
+        "${CMAKE_CURRENT_BINARY_DIR}/WasmDOMHost/DOMHostGeneratedFunctions.cpp"
+        "${CMAKE_CURRENT_BINARY_DIR}/WasmDOMHost/dom_generated.rs"
+    )
+    add_custom_command(
+        OUTPUT ${wasm_dom_generated_sources}
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "WasmDOMHost"
+        COMMAND "${Python3_EXECUTABLE}" "${wasm_dom_generator}" -o "WasmDOMHost"
+                ${LIBWEB_ALL_PARSED_IDL_FILES_ARGUMENT}
+        VERBATIM
+        COMMENT "Generating LibWeb wasm-dom host functions"
+        DEPENDS "${wasm_dom_generator}" ${bindings_generator_dependencies} ${LIBWEB_ALL_IDL_FILES} ${LIBWEB_ALL_PARSED_IDL_FILES}
+    )
+    add_custom_target(generate_wasm_dom_bindings DEPENDS ${wasm_dom_generated_sources})
+    add_dependencies(ladybird_codegen_accumulator generate_wasm_dom_bindings)
+    add_dependencies(${target} generate_wasm_dom_bindings)
+    add_dependencies(generate_wasm_dom_bindings ${generated_idl_targets})
+    target_sources(${target} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/WasmDOMHost/DOMHostGeneratedFunctions.cpp")
+
     set(LIBWEB_ALL_GENERATED_HEADERS ${LIBWEB_ALL_GENERATED_HEADERS} PARENT_SCOPE)
 endfunction()

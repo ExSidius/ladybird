@@ -15,6 +15,7 @@
 #include <LibURL/URL.h>
 #include <LibWasm/AbstractMachine/AbstractMachine.h>
 #include <LibWeb/Forward.h>
+#include <LibWeb/WebIDL/ExceptionOr.h>
 
 namespace Web::WebAssembly::DOMHost {
 
@@ -63,13 +64,24 @@ public:
         Node,
         Event,
         Response,
+        // Anything else the generated bindings hand out (DOMTokenList etc.).
+        Object,
     };
 
     i32 allocate_handle(GC::Cell&, HandleKind);
+    // For generated code: pick the handle kind from the cell's dynamic type.
+    i32 allocate_handle_for_cell(GC::Cell&);
     ErrorOr<GC::Ref<DOM::Node>, Wasm::Trap> node_from_handle(i32);
     ErrorOr<GC::Ref<DOM::Event>, Wasm::Trap> event_from_handle(i32);
     ErrorOr<GC::Ref<FetchResponse>, Wasm::Trap> response_from_handle(i32);
+    // For generated code: any-kind lookup; callers type-check the cell themselves.
+    ErrorOr<GC::Ref<GC::Cell>, Wasm::Trap> cell_from_handle(i32);
     void release_handle(i32);
+
+    // Expected DOM exceptions from generated bindings are recorded here (and a
+    // sentinel returned); dom.last_error_message reads the record back.
+    void set_last_error(WebIDL::Exception const&);
+    Optional<String> const& last_error() const { return m_last_error; }
 
     // Async host operations: start now, deliver later by calling the guest callback
     // from the event loop. The guest brings its own scheduling (if any); the host
@@ -99,7 +111,9 @@ private:
         u8 generation { 1 };
         HandleKind kind { HandleKind::Node };
     };
-    ErrorOr<HandleEntry*, Wasm::Trap> entry_from_handle(i32, HandleKind);
+    ErrorOr<HandleEntry*, Wasm::Trap> entry_from_handle(i32, Optional<HandleKind>);
+
+    Optional<String> m_last_error;
 
     GC::Ref<DOM::Document> m_document;
     // The machine must be heap-allocated and never move: its store hands out

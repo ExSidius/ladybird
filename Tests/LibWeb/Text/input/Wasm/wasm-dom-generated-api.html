@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<div id="root"><p class="greeting">hello</p></div>
+<ol id="out"></ol>
+<script type="application/wasm-dom" src="../../data/wasm-dom/generated-api.wasm"></script>
+<script src="../include.js"></script>
+<script>
+    // Exercises WebIDL-*generated* host functions: Node.ownerDocument,
+    // Document.querySelector, Element.matches/tagName/classList,
+    // DOMTokenList.contains, Node.firstChild, CharacterData.appendData, and the
+    // recorded-error path for an invalid selector.
+    test(() => {
+        const out = document.getElementById("out");
+        println("matches: " + out.getAttribute("data-matches"));
+        println("tagName: " + out.querySelector("li").textContent);
+        println("classList.contains: " + out.getAttribute("data-token"));
+        println("appendData result: " + document.querySelector("#root > p").textContent);
+        println("invalid selector recorded an error: " + out.getAttribute("data-error"));
+    });
+</script>
