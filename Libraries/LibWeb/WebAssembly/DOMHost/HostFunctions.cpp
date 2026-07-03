@@ -148,6 +148,47 @@ static Wasm::Result event_type(DOMHostInstance& instance, Span<Wasm::Value> argu
     return return_i32(TRY_OR_TRAP(instance.write_string(event->type().bytes_as_string_view(), arguments[1].to<u32>(), arguments[2].to<u32>())));
 }
 
+// dom.set_timeout(ms: i32, callback: i32, user_data: i32) -> status: i32
+// The callback is invoked once from the event loop with argument 0. No handle, no
+// cancellation in v0.
+static Wasm::Result set_timeout(DOMHostInstance& instance, Span<Wasm::Value> arguments)
+{
+    auto milliseconds = arguments[0].to<i32>();
+    auto function = TRY_OR_TRAP(instance.callback_from_table_index(arguments[1].to<u32>()));
+    instance.set_timeout(milliseconds < 0 ? 0 : static_cast<u32>(milliseconds), function, arguments[2].to<i32>());
+    return return_i32(0);
+}
+
+// dom.fetch(url_ptr: i32, url_len: i32, callback: i32, user_data: i32) -> status: i32
+// The URL is parsed relative to the document. The callback receives a Response
+// handle (0 on network failure) valid only for the duration of the callback.
+static Wasm::Result fetch(DOMHostInstance& instance, Span<Wasm::Value> arguments)
+{
+    auto url_string = TRY_OR_TRAP(instance.read_utf8_string(arguments[0].to<u32>(), arguments[1].to<u32>()));
+    auto function = TRY_OR_TRAP(instance.callback_from_table_index(arguments[2].to<u32>()));
+    auto url = instance.document().encoding_parse_url(url_string);
+    if (!url.has_value())
+        return return_i32(-1);
+    instance.start_fetch(url.release_value(), function, arguments[3].to<i32>());
+    return return_i32(0);
+}
+
+// dom.response_status(response: i32) -> i32
+static Wasm::Result response_status(DOMHostInstance& instance, Span<Wasm::Value> arguments)
+{
+    auto response = TRY_OR_TRAP(instance.response_from_handle(arguments[0].to<i32>()));
+    return return_i32(response->status());
+}
+
+// dom.response_read(response: i32, dst_ptr: i32, dst_cap: i32) -> len: i32
+// Same caller-buffer retry ABI as the string getters.
+static Wasm::Result response_read(DOMHostInstance& instance, Span<Wasm::Value> arguments)
+{
+    auto response = TRY_OR_TRAP(instance.response_from_handle(arguments[0].to<i32>()));
+    auto body = StringView { response->body() };
+    return return_i32(TRY_OR_TRAP(instance.write_string(body, arguments[1].to<u32>(), arguments[2].to<u32>())));
+}
+
 // dom.release(handle: i32) -> ()
 static Wasm::Result release(DOMHostInstance& instance, Span<Wasm::Value> arguments)
 {
@@ -173,6 +214,10 @@ static constexpr auto s_host_functions = to_array<HostFunctionSpec>({
     { "text_content_set"sv, text_content_set, 3, 1 },
     { "add_event_listener"sv, add_event_listener, 5, 1 },
     { "event_type"sv, event_type, 3, 1 },
+    { "set_timeout"sv, set_timeout, 3, 1 },
+    { "fetch"sv, fetch, 4, 1 },
+    { "response_status"sv, response_status, 1, 1 },
+    { "response_read"sv, response_read, 3, 1 },
     { "release"sv, release, 1, 0 },
 });
 

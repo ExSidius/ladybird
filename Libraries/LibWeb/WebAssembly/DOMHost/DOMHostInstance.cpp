@@ -6,15 +6,24 @@
 
 #include <AK/Checked.h>
 #include <AK/TemporaryChange.h>
+#include <LibCore/ImmutableBytes.h>
+#include <LibGC/Function.h>
 #include <LibWasm/AbstractMachine/Validator.h>
 #include <LibWeb/DOM/Document.h>
 #include <LibWeb/DOM/Event.h>
 #include <LibWeb/DOM/Node.h>
+#include <LibWeb/Fetch/Fetching/Fetching.h>
+#include <LibWeb/Fetch/Infrastructure/FetchAlgorithms.h>
+#include <LibWeb/Fetch/Infrastructure/HTTP/Requests.h>
+#include <LibWeb/Fetch/Infrastructure/HTTP/Responses.h>
+#include <LibWeb/HTML/Scripting/Environments.h>
+#include <LibWeb/Platform/Timer.h>
 #include <LibWeb/WebAssembly/DOMHost/DOMHostInstance.h>
 #include <LibWeb/WebAssembly/DOMHost/HostFunctions.h>
 
 namespace Web::WebAssembly::DOMHost {
 
+GC_DEFINE_ALLOCATOR(FetchResponse);
 GC_DEFINE_ALLOCATOR(DOMHostInstance);
 
 GC::Ref<DOMHostInstance> DOMHostInstance::create(GC::Heap& heap, DOM::Document& document, NonnullRefPtr<Wasm::Module> module)
@@ -180,6 +189,61 @@ ErrorOr<GC::Ref<DOM::Event>, Wasm::Trap> DOMHostInstance::event_from_handle(i32 
 {
     auto* entry = TRY(entry_from_handle(handle, HandleKind::Event));
     return *as<DOM::Event>(entry->cell.ptr());
+}
+
+ErrorOr<GC::Ref<FetchResponse>, Wasm::Trap> DOMHostInstance::response_from_handle(i32 handle)
+{
+    auto* entry = TRY(entry_from_handle(handle, HandleKind::Response));
+    return *as<FetchResponse>(entry->cell.ptr());
+}
+
+void DOMHostInstance::set_timeout(u32 milliseconds, Wasm::FunctionAddress function, i32 user_data)
+{
+    // An active Platform::Timer survives garbage collection on its own, and the
+    // handler's captured GC::Ref keeps this instance (and thus the machine) alive
+    // until it fires. The callback runs as an ordinary event-loop turn, never
+    // nested inside a guest invocation.
+    auto handler = GC::create_function(heap(), [self = GC::Ref { *this }, function, user_data] {
+        self->invoke_callback(function, 0, user_data);
+    });
+    Platform::Timer::create_single_shot(heap(), static_cast<int>(milliseconds), handler)->start();
+}
+
+void DOMHostInstance::start_fetch(URL::URL url, Wasm::FunctionAddress function, i32 user_data)
+{
+    auto& realm = m_document->realm();
+    auto& vm = realm.vm();
+
+    auto request = Fetch::Infrastructure::Request::create(vm);
+    request->set_url(move(url));
+    request->set_client(&m_document->relevant_settings_object());
+    // CORS mode, like the fetch() API: the host hands the guest the raw body, so
+    // cross-origin reads must require CORS opt-in. (Consequently, like fetch(),
+    // this does not work on file:// pages — the file-scheme fetch guard blocks
+    // destination-less requests to prevent data exfiltration.)
+    request->set_mode(Fetch::Infrastructure::Request::Mode::CORS);
+    request->set_credentials_mode(Fetch::Infrastructure::Request::CredentialsMode::SameOrigin);
+
+    Fetch::Infrastructure::FetchAlgorithms::Input fetch_algorithms_input {};
+    fetch_algorithms_input.process_response_consume_body = [self = GC::Ref { *this }, function, user_data](auto response, auto body_bytes) {
+        response = response->unsafe_response();
+
+        // Network failure or bodyless response -> callback argument 0.
+        i32 argument = 0;
+        if (body_bytes.template has<Core::ImmutableBytes>()) {
+            auto body = body_bytes.template get<Core::ImmutableBytes>();
+            auto body_copy = ByteBuffer::copy(body.bytes());
+            if (!body_copy.is_error()) {
+                auto response_cell = self->heap().allocate<FetchResponse>(response->status(), body_copy.release_value());
+                argument = self->allocate_handle(*response_cell, HandleKind::Response);
+            }
+        }
+        self->invoke_callback(function, argument, user_data);
+        // Like event handles, response handles are valid only during the callback.
+        if (argument != 0)
+            self->release_handle(argument);
+    };
+    Fetch::Fetching::fetch(realm, request, Fetch::Infrastructure::FetchAlgorithms::create(vm, move(fetch_algorithms_input)));
 }
 
 void DOMHostInstance::release_handle(i32 handle)

@@ -1,0 +1,2 @@
+li.textContent: tick
+li.getAttribute(data-user): yes

@@ -6,15 +6,38 @@
 
 #pragma once
 
+#include <AK/ByteBuffer.h>
 #include <AK/ByteString.h>
 #include <AK/NonnullOwnPtr.h>
 #include <AK/Vector.h>
 #include <LibGC/Ptr.h>
 #include <LibJS/Heap/Cell.h>
+#include <LibURL/URL.h>
 #include <LibWasm/AbstractMachine/AbstractMachine.h>
 #include <LibWeb/Forward.h>
 
 namespace Web::WebAssembly::DOMHost {
+
+// A completed dom.fetch response, exposed to the guest as a Response handle that
+// is valid only for the duration of the completion callback.
+class FetchResponse final : public JS::Cell {
+    GC_CELL(FetchResponse, JS::Cell);
+    GC_DECLARE_ALLOCATOR(FetchResponse);
+
+public:
+    FetchResponse(u16 status, ByteBuffer body)
+        : m_status(status)
+        , m_body(move(body))
+    {
+    }
+
+    u16 status() const { return m_status; }
+    ReadonlyBytes body() const { return m_body.bytes(); }
+
+private:
+    u16 m_status { 0 };
+    ByteBuffer m_body;
+};
 
 // The environment for one <script type="application/wasm-dom"> module: owns the
 // abstract machine, the module instance, and the handle table through which the
@@ -39,12 +62,20 @@ public:
     enum class HandleKind : u8 {
         Node,
         Event,
+        Response,
     };
 
     i32 allocate_handle(GC::Cell&, HandleKind);
     ErrorOr<GC::Ref<DOM::Node>, Wasm::Trap> node_from_handle(i32);
     ErrorOr<GC::Ref<DOM::Event>, Wasm::Trap> event_from_handle(i32);
+    ErrorOr<GC::Ref<FetchResponse>, Wasm::Trap> response_from_handle(i32);
     void release_handle(i32);
+
+    // Async host operations: start now, deliver later by calling the guest callback
+    // from the event loop. The guest brings its own scheduling (if any); the host
+    // only provides operations and wakeups.
+    void set_timeout(u32 milliseconds, Wasm::FunctionAddress, i32 user_data);
+    void start_fetch(URL::URL, Wasm::FunctionAddress, i32 user_data);
 
     ErrorOr<String, Wasm::Trap> read_utf8_string(u32 pointer, u32 length);
     ErrorOr<i32, Wasm::Trap> write_string(StringView, u32 destination_pointer, u32 destination_capacity);

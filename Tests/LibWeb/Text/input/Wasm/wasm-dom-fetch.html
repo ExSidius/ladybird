@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<div id="out"></div>
+<script type="application/wasm-dom" src="../../data/wasm-dom/fetch.wasm"></script>
+<script src="../include.js"></script>
+<script>
+    // _start issued a dom.fetch for message.txt; the completion callback reads the
+    // body (exercising the 4-byte-buffer retry) and writes it into #out.
+    asyncTest(async (done) => {
+        const out = document.getElementById("out");
+        while (out.textContent === "")
+            await new Promise((resolve) => setTimeout(resolve, 10));
+        println("out.textContent: " + out.textContent);
+        println("out.getAttribute(data-status): " + out.getAttribute("data-status"));
+        done();
+    });
+</script>

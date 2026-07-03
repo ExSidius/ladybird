@@ -1,0 +1,2 @@
+out.textContent: hello from the network
+out.getAttribute(data-status): ok

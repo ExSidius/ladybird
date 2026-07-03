@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<div id="out"></div>
+<script type="application/wasm-dom" src="../../data/wasm-dom/timeout.wasm"></script>
+<script src="../include.js"></script>
+<script>
+    // _start scheduled a 1ms dom.set_timeout; the callback appends an li from the
+    // event loop. JS only polls for the result.
+    asyncTest(async (done) => {
+        while (document.querySelectorAll("#out > li").length === 0)
+            await new Promise((resolve) => setTimeout(resolve, 10));
+        const li = document.querySelector("#out > li");
+        println("li.textContent: " + li.textContent);
+        println("li.getAttribute(data-user): " + li.getAttribute("data-user"));
+        done();
+    });
+</script>
