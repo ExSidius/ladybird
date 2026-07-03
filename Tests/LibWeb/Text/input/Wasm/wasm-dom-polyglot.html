@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<div id="root"></div>
+<div id="zig-root"></div>
+<script type="application/wasm-dom" src="../../data/wasm-dom/rust-guest.wasm"></script>
+<script type="application/wasm-dom" src="../../data/wasm-dom/zig-guest.wasm"></script>
+<script src="../include.js"></script>
+<script>
+    // Two modules, two languages, one page, zero page JavaScript: each script gets
+    // its own abstract machine and handle table.
+    asyncTest(async (done) => {
+        println("rust heading: " + document.getElementById("rust-heading").textContent);
+        println("zig heading: " + document.getElementById("zig-heading").textContent);
+
+        document.getElementById("rust-btn").click();
+        document.getElementById("rust-btn").click();
+        println("rust items: " + document.querySelectorAll("#out > li").length);
+        println("rust last: " + document.querySelector("#out > li:last-child").textContent);
+
+        const zigOut = document.getElementById("zig-out");
+        while (zigOut.querySelectorAll("li").length === 0 || zigOut.getAttribute("data-timer") === null)
+            await new Promise((resolve) => setTimeout(resolve, 10));
+        println("zig fetched: " + zigOut.querySelector("li").textContent);
+        println("zig data-timer: " + zigOut.getAttribute("data-timer"));
+        done();
+    });
+</script>

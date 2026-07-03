@@ -83,13 +83,30 @@ via `machine.invoke`. No `prepare_to_run_callback`: the task-boundary microtask
 checkpoint covers the bookkeeping. `EventTarget::add_an_event_listener` needs
 null-guards (its dedup path dereferences the JS callback unconditionally).
 
-### Async (explicitly out of scope, designed)
+### Async (M3, implemented)
 
-Callback-style host ops (`host_fetch`, `host_set_timeout`) that return
-immediately and later deliver completion by queueing a task on the HTML event
-loop that `machine.invoke`s a guest export. The guest's own async runtime (if
-any) rides inside the module; the host provides operations and wakeups only.
-Not in v0.
+`dom.set_timeout(ms, cb, user_data)` and `dom.fetch(url, cb, user_data)` follow
+the wakeup model: start now, deliver later by invoking a guest funcref-table
+callback from the event loop (never nested inside a guest invocation). The
+guest's own async runtime (if any) rides inside its module; the host provides
+operations and wakeups only. `dom.fetch` goes through the real Fetch stack in
+CORS mode with the document as client — cross-origin reads need CORS opt-in,
+and (like the fetch() API) it is blocked on file:// pages by the file-scheme
+exfiltration guard, so fetch tests run via the HTTP test server
+(`TestConfig.ini` `[LoadFromHttpServer]`). Responses surface as a Response
+handle (`response_status` / `response_read`, buffer-retry ABI) valid only
+during the completion callback.
+
+### Real-language guests (implemented)
+
+`Tests/LibWeb/Text/data/wasm-dom/guests/` holds a **Rust** guest (no_std,
+typed Node wrapper over the interface, click counter with in-module string
+formatting; 1.3 KB) and a **Zig** guest (fetch + timer via the async ABI;
+0.9 KB), with committed binaries and build instructions. On wasm32 a function
+pointer is its funcref-table index in both languages, so callbacks are just
+`f as usize as i32` / `@intFromPtr(&f)` — the ABI needs no language-specific
+support. `wasm-dom-polyglot.html` runs both modules on one page (each script
+gets its own machine and handle table).
 
 ## Verification
 

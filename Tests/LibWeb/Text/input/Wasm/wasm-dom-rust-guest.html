@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<div id="root"></div>
+<script type="application/wasm-dom" src="../../data/wasm-dom/rust-guest.wasm"></script>
+<script src="../include.js"></script>
+<script>
+    // The module was written in Rust (guests/rust/) — it builds the UI inside
+    // #root and counts clicks with the formatting done in Rust.
+    test(() => {
+        println("heading: " + document.getElementById("rust-heading").textContent);
+        const btn = document.getElementById("rust-btn");
+        btn.click();
+        btn.click();
+        btn.click();
+        const items = document.querySelectorAll("#out > li");
+        println("items after 3 clicks: " + items.length);
+        println("first: " + items[0].textContent);
+        println("last: " + items[2].textContent);
+    });
+</script>

@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<div id="zig-root"></div>
+<script type="application/wasm-dom" src="../../data/wasm-dom/zig-guest.wasm"></script>
+<script src="../include.js"></script>
+<script>
+    // The module was written in Zig (guests/zig/) — it builds the UI, fetches a
+    // text file, and schedules a timer, all through the dom host interface.
+    asyncTest(async (done) => {
+        println("heading: " + document.getElementById("zig-heading").textContent);
+        const out = document.getElementById("zig-out");
+        while (out.querySelectorAll("li").length === 0 || out.getAttribute("data-timer") === null)
+            await new Promise((resolve) => setTimeout(resolve, 10));
+        println("fetched: " + out.querySelector("li").textContent);
+        println("data-status: " + out.getAttribute("data-status"));
+        println("data-timer: " + out.getAttribute("data-timer"));
+        done();
+    });
+</script>
