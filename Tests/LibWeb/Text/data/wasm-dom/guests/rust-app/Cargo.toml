@@ -1,0 +1,19 @@
+[package]
+name = "wasm-dom-rust-app"
+version = "0.1.0"
+edition = "2021"
+
+# Keep this crate out of the repository's Cranelift workspace.
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+glue = []
+
+[profile.release]
+opt-level = 3
+lto = true
+panic = "abort"
+strip = true

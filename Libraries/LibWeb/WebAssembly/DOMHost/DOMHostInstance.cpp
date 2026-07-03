@@ -51,9 +51,7 @@ void DOMHostInstance::visit_edges(Visitor& visitor)
 
 ErrorOr<void, ByteString> DOMHostInstance::link_and_instantiate()
 {
-    // The interpreter path is the known-good one; native compilation is what the
-    // JS WebAssembly API currently uses for instantiation-by-buffer as well.
-    if (auto result = m_machine->validate(*m_module, {}, Wasm::CompileToNative::No); result.is_error())
+    if (auto result = m_machine->validate(*m_module, {}, Wasm::CompileToNative::Yes); result.is_error())
         return ByteString::formatted("validation failed: {}", result.error().error_string);
 
     Wasm::Linker linker { *m_module };

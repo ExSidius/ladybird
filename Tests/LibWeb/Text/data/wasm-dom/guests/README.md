@@ -59,6 +59,20 @@ cp target/wasm32-unknown-unknown/release/wasm_dom_rust_bench.wasm ../../bench/ru
 # regenerate bench-glue.html (inlines the glue module as base64): see git history
 ```
 
+## Suite, chain, and app guests (`rust-suite/`, `rust-chain/`, `rust-app/`)
+
+Benchmark guests for the extended suite (see `../bench/RESULTS.md`): compute /
+crossing / payload / walk workloads (`rust-suite`, dual dom+glue build like
+rust-bench), the async wakeup chain (`rust-chain`), and the keyed-list app
+benchmark (`rust-app`). Build each with the usual:
+
+```sh
+RUSTFLAGS="-C link-args=--export-table" cargo build --release --target wasm32-unknown-unknown
+```
+
+then copy the artifact into `../bench/` (suite additionally builds a
+`--features glue` variant; regenerate the base64 in `suite-glue.html` after).
+
 ## Zig (`zig/`)
 
 ```sh

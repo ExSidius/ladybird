@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<!-- Extended suite, pure JavaScript variant. Same workloads, same fixture DOM. -->
+<body>
+<script src="suite-scaffold.js"></script>
+<script>
+let sink = 0;
+
+function report(name, ms) {
+    const li = document.createElement("li");
+    li.textContent = `${name} ${ms.toFixed(2)} ms`;
+    document.getElementById("results").appendChild(li);
+}
+
+function timed(name, f) {
+    const start = performance.now();
+    f();
+    report(name, performance.now() - start);
+}
+
+// ---- pure compute (identical algorithms to the wasm module) ----
+
+function fib(n) {
+    return n < 2 ? n : fib(n - 1) + fib(n - 2);
+}
+
+const DIM = 64;
+const matA = new Float64Array(DIM * DIM);
+const matB = new Float64Array(DIM * DIM);
+const matC = new Float64Array(DIM * DIM);
+for (let i = 0; i < DIM * DIM; i++) {
+    matA[i] = (i % 97) * 0.5;
+    matB[i] = (i % 89) * 0.25;
+}
+
+function matmul() {
+    for (let r = 0; r < 4; r++) {
+        for (let i = 0; i < DIM; i++) {
+            for (let j = 0; j < DIM; j++) {
+                let sum = 0;
+                for (let k = 0; k < DIM; k++)
+                    sum += matA[i * DIM + k] * matB[k * DIM + j];
+                matC[i * DIM + j] = sum;
+            }
+        }
+    }
+    return matC[1];
+}
+
+const PAYLOAD_MAX = 512 * 1024;
+const payloadBytes = new Uint8Array(PAYLOAD_MAX);
+for (let i = 0; i < PAYLOAD_MAX; i++)
+    payloadBytes[i] = 97 + (i % 26);
+
+function fnv() {
+    let h = 0x811c9dc5 | 0;
+    for (let r = 0; r < 8; r++) {
+        for (let i = 0; i < PAYLOAD_MAX; i++)
+            h = Math.imul(h ^ payloadBytes[i], 0x01000193);
+    }
+    return h >>> 0;
+}
+
+// ---- crossing weights (a JS "crossing" is just a call) ----
+
+let noopCounter = 0;
+function noopf() { noopCounter++; }
+
+function benchNoop() {
+    for (let i = 0; i < 100000; i++)
+        noopf();
+}
+
+function benchSetattr() {
+    const target = document.getElementById("target");
+    for (let i = 0; i < 20000; i++)
+        target.setAttribute("data-x", i % 2 === 0 ? "alpha" : "beta");
+}
+
+function benchQsel() {
+    for (let i = 0; i < 2000; i++)
+        sink += document.querySelector("div.item:nth-of-type(9)") !== null ? 1 : 0;
+}
+
+// ---- payload sweep ----
+
+const asciiPayload = (() => {
+    let s = "";
+    for (let i = 0; i < PAYLOAD_MAX; i++)
+        s += String.fromCharCode(97 + (i % 26));
+    return s;
+})();
+
+function benchPayload(size, iterations, str) {
+    const node = document.getElementById("textnode");
+    const s = str.slice(0, size);
+    for (let i = 0; i < iterations; i++) {
+        node.textContent = s;
+        sink += node.textContent.length;
+    }
+}
+
+// ---- walks ----
+
+function walk(hold) {
+    const list = document.getElementById("walklist");
+    let count = 0;
+    let node = list.firstChild;
+    while (node !== null) {
+        if (hold) hold.push(node);
+        count++;
+        node = node.nextSibling;
+    }
+    return count;
+}
+
+for (let rep = 0; rep < 3; rep++) {
+    timed("fib", () => { sink += fib(27); });
+    timed("matmul", () => { sink += matmul(); });
+    timed("hash", () => { sink += fnv(); });
+
+    timed("xnoop", benchNoop);
+    timed("xsetattr", benchSetattr);
+    timed("xqsel", benchQsel);
+
+    timed("pay16", () => benchPayload(16, 8000, asciiPayload));
+    timed("pay256", () => benchPayload(256, 4000, asciiPayload));
+    timed("pay4096", () => benchPayload(4096, 1000, asciiPayload));
+    timed("pay65536", () => benchPayload(65536, 120, asciiPayload));
+    timed("pay524288", () => benchPayload(524288, 16, asciiPayload));
+    timed("paynonascii", () => benchPayload(32768, 120, "é".repeat(32768)));
+
+    const held = [];
+    timed("walkhold", () => { sink += walk(held); });
+    timed("walkwarm", () => { sink += walk(null); });
+    held.length = 0;
+    timed("walkrelease", () => { sink += walk(null); });
+}
+
+document.getElementById("results").setAttribute("data-done", "yes");
+</script>

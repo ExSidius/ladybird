@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<!-- Wakeup-chain benchmark, JS variants: 500 setTimeout(0) hops (task-based, like
+     the wasm chain; note the HTML spec's nesting clamp may apply) and 500
+     Promise.resolve hops (microtask-based reference). -->
+<body>
+<ol id="results"></ol>
+<script>
+    const results = document.getElementById("results");
+    function report(name, ms) {
+        const li = document.createElement("li");
+        li.textContent = `${name} ${ms.toFixed(2)} ms`;
+        results.appendChild(li);
+    }
+
+    const DEPTH = 500;
+
+    function timeoutChain() {
+        return new Promise((resolve) => {
+            const start = performance.now();
+            let count = 1;
+            function hop() {
+                if (count++ < DEPTH)
+                    setTimeout(hop, 0);
+                else
+                    resolve(performance.now() - start);
+            }
+            setTimeout(hop, 0);
+        });
+    }
+
+    async function microtaskChain() {
+        const start = performance.now();
+        for (let i = 0; i < DEPTH; i++)
+            await Promise.resolve();
+        return performance.now() - start;
+    }
+
+    (async () => {
+        report("chain-timeout", await timeoutChain());
+        report("chain-microtask", await microtaskChain());
+        results.setAttribute("data-done", "yes");
+    })();
+</script>

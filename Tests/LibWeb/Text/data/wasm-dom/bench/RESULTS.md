@@ -69,3 +69,116 @@ boundary — a V8-class engine makes glue cheaper (and JS faster) in absolute
 terms, so these ratios do not transfer to Chrome; the apples-to-apples claim
 is only about the three paths within this engine. JS numbers are quantized by
 performance.now resolution (0.1 ms), which matters for *query*.
+
+---
+
+# Extended suite (2026-07-03)
+
+Seven benchmark families probing strengths and limitations beyond the original
+boundary micro-benchmarks. Pages: `suite-*.html`, `events-*.html`,
+`chain-*.html`, `app-*.html`, `startup-compile.html`, `memory-*.html`; guests:
+`rust-suite`, `rust-chain`, `rust-app`, `events-bench.wat`-style module.
+Medians of 9 samples (3 process runs x 3 in-page reps) unless noted. Cranelift
+native compilation enabled for guest code (verified engaged: fib is 21% slower
+with it disabled).
+
+## 1. Pure compute (identical algorithms, zero crossings)
+
+| workload | JS | wasm | wasm vs JS |
+|---|---|---|---|
+| fib(27), recursive calls | 6.70 ms | 25.52 ms | **0.26x — 3.8x slower** |
+| matmul 64x64 f64 (x4) | 30.60 ms | 10.40 ms | **2.94x faster** |
+| FNV-1a over 512 KB (x8) | 52.60 ms | 21.57 ms | **2.44x faster** |
+
+**Finding:** LibWasm beats LibJS decisively on loop/arithmetic code but loses
+badly on call-heavy code — function-call overhead is the engine's weak spot
+even with the JIT. An app should keep hot paths loop-shaped (or the engine
+needs call-path JIT work). This is an execution-engine property, independent
+of the DOM interface.
+
+## 2. Crossing cost by operation weight
+
+| op (per-call cost) | JS | wasm+glue | wasm-dom |
+|---|---|---|---|
+| noop x100k | 12 ns | 44 ns | **22 ns** |
+| setAttribute x20k | 725 ns | 860 ns | **197 ns** |
+| querySelector(complex) x2k | 700 ns | 950 ns | 780 ns |
+
+**Findings:** the raw boundary crossing is ~22 ns — only ~2x a plain JS
+function call, and 2x cheaper than a glue crossing. For a real mutation
+(setAttribute) the native path is **3.7x faster than JS**, because the JS
+bindings layer (value conversion, dispatch) costs far more than the crossing.
+For engine-dominated ops (querySelector) all paths converge — the boundary
+stops mattering, as predicted.
+
+## 3. Payload size sweep (textContent set+get, raw strings)
+
+| size | JS | wasm+glue | wasm-dom | dom vs js |
+|---|---|---|---|---|
+| 16 B x8k | 5.60 | 16.90 | **4.74** | 1.18x faster |
+| 256 B x4k | 3.60 | 15.10 | **2.44** | 1.48x faster |
+| 4 KB x1k | 1.20 | 22.20 | 1.16 | parity |
+| 64 KB x120 | 0.60 | 37.90 | 1.10 | 0.55x |
+| 512 KB x16 | 0.50 | 40.00 | 1.01 | 0.50x |
+| 64 KB non-ASCII x120 | 0.80 | 41.60 | 5.09 | 0.16x |
+
+**Findings:** the copy-ABI crossover is ~4 KB. Below it the native path wins
+(lower per-call overhead); above it JS wins by passing references while we
+memcpy (~15 GB/s, so the loss is bounded at 2x); non-ASCII adds the UTF-16
+transcode and widens the loss to 6x. Glue collapses at every size
+(TextDecoder/TextEncoder per crossing). Fixes: reference-passing
+(shared/externref strings) for large payloads; nothing needed below 4 KB.
+
+## 4. Handle-table scaling (30k-node sibling walk)
+
+| walk | JS | wasm+glue | wasm-dom |
+|---|---|---|---|
+| cold (allocate 30k handles) | 3.70 | 6.90 | 5.40 |
+| warm (identity-cache hits) | 1.60 | 5.10 | 3.27 |
+| churn (release as you go) | 1.50 | 7.40 | 4.65 |
+
+**Finding:** pointer-chasing traversal is the boundary's worst shape — two
+crossings per node, ~55 ns each even warm, vs JS property reads at ~27 ns.
+The identity cache scales fine (warm 40% faster than cold at 30k entries);
+the residual cost is the crossing count itself. The fix is API shape (bulk
+child-list reads), not a faster crossing.
+
+## 5. Event dispatch (5000 dispatches, minimal listener, same JS driver)
+
+JS listener 2.30 ms; native wasm listener 2.50 ms — **parity** (~40 ns/dispatch
+penalty ≈ per-dispatch event-handle allocate/release + machine.invoke entry).
+Dispatch machinery dominates both paths.
+
+## 6. Async wakeups (500 sequential zero-delay hops)
+
+wasm dom.set_timeout chain **5.0 ms (10 µs/hop)**; JS setTimeout chain 9.7 ms
+(19 µs/hop); JS microtask chain 0.10 ms (0.2 µs/hop — different mechanism, for
+scale). The wakeup ABI is 2x cheaper than JS timers; guest async runtimes can
+afford ~100k wakeups/sec.
+
+## 7. Startup and memory
+
+Module compile+validate (`new WebAssembly.Module`, same LibWasm machinery):
+linear at ~70 µs/KB — 1.7 KB: 0.4 ms; 46 KB real module: 5.5 ms; 288 KB:
+20.6 ms. A 100-module page adds no measurable wall clock over a 100-script JS
+page (0.20 s vs 0.19 s) and **+6 MB RSS total (~60 KB per module environment,
+mostly the module's own 64 KB linear memory)** — per-script machines are cheap;
+the feared per-instance overhead did not materialize.
+
+## 8. App-shaped (keyed list, 200 rows, 500 state ops, minimal updates)
+
+JS 0.80 ms; wasm-dom 0.87 ms — **parity**. Held row handles (identity cache as
+wrapper cache) + interned attribute names make the boundary invisible next to
+the engine's mutation work. For realistic fine-grained UI code, language
+choice is free of performance cost in either direction.
+
+## Synthesis
+
+Strengths: loop/arithmetic compute (2.4-2.9x), DOM mutation throughput (3.7x),
+small-payload strings, async wakeups (2x), startup and memory (negligible
+cost), and realistic app workloads (parity). Limitations, each now quantified
+with its known fix: call-heavy wasm code (engine JIT work), large-payload
+strings (reference passing), and chatty pointer-chasing traversal (bulk APIs).
+Nothing measured contradicts the architecture; the two structural losses are
+properties of the copy ABI and the execution engine, not of the host-interface
+design.

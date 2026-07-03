@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<!-- App-shaped benchmark, JS variant: identical state machine and update policy. -->
+<body>
+<ul id="list" hidden></ul>
+<ol id="results"></ol>
+<script>
+    const ITEMS = 200, OPS = 500;
+    const listEl = document.getElementById("list");
+    const results = document.getElementById("results");
+
+    let nextId = 0;
+    const list = [];
+
+    function label(item) {
+        return `item-${item.id}-v${item.version}`;
+    }
+
+    function renderNewItem(item) {
+        const li = document.createElement("li");
+        li.textContent = label(item);
+        li.setAttribute("data-done-state", item.done ? "yes" : "no");
+        listEl.appendChild(li);
+        item.element = li;
+    }
+
+    for (let i = 0; i < ITEMS; i++) {
+        const item = { id: ++nextId, version: 0, done: false, element: null };
+        renderNewItem(item);
+        list.push(item);
+    }
+
+    function runOps() {
+        for (let op = 0; op < OPS; op++) {
+            switch (op % 3) {
+                case 0: {
+                    const item = list[(op * 7) % ITEMS];
+                    item.done = !item.done;
+                    item.element.setAttribute("data-done-state", item.done ? "yes" : "no");
+                    break;
+                }
+                case 1: {
+                    const item = list[(op * 13) % ITEMS];
+                    item.version++;
+                    item.element.textContent = label(item);
+                    break;
+                }
+                default: {
+                    const victim = list.shift();
+                    listEl.removeChild(victim.element);
+                    const fresh = { id: ++nextId, version: 0, done: false, element: null };
+                    renderNewItem(fresh);
+                    list.push(fresh);
+                }
+            }
+        }
+    }
+
+    for (let rep = 0; rep < 3; rep++) {
+        const start = performance.now();
+        runOps();
+        const li = document.createElement("li");
+        li.textContent = `app ${(performance.now() - start).toFixed(2)} ms`;
+        results.appendChild(li);
+    }
+    results.setAttribute("data-done", "yes");
+</script>

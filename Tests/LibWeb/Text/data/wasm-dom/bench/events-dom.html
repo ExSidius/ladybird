@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<!-- Event dispatch benchmark, native-listener variant: the wasm module registers a
+     minimal click listener (counter increment); the JS driver below dispatches and
+     times. The driver is identical in both variants, so the difference is listener
+     invocation cost. -->
+<body>
+<button id="btn"></button>
+<ol id="results"></ol>
+<script type="application/wasm-dom" src="events-bench.wasm"></script>
+<script>
+    const btn = document.getElementById("btn");
+    const results = document.getElementById("results");
+    for (let rep = 0; rep < 5; rep++) {
+        const start = performance.now();
+        for (let i = 0; i < 5000; i++)
+            btn.dispatchEvent(new Event("click"));
+        const li = document.createElement("li");
+        li.textContent = `dispatch ${(performance.now() - start).toFixed(2)} ms`;
+        results.appendChild(li);
+    }
+    results.setAttribute("data-done", "yes");
+</script>

@@ -198,6 +198,12 @@ static Wasm::Result intern(DOMHostInstance& instance, Span<Wasm::Value> argument
     return return_i32(instance.intern_string(move(string)));
 }
 
+// dom.noop() -> (): does nothing; exists to measure pure boundary-crossing cost.
+static Wasm::Result noop(DOMHostInstance&, Span<Wasm::Value>)
+{
+    return return_nothing();
+}
+
 // dom.release(handle: i32) -> ()
 static Wasm::Result release(DOMHostInstance& instance, Span<Wasm::Value> arguments)
 {
@@ -238,6 +244,7 @@ static constexpr auto s_host_functions = to_array<HostFunctionSpec>({
     { "response_read"sv, response_read, "iii"sv, "i"sv },
     { "last_error_message"sv, last_error_message, "ii"sv, "i"sv },
     { "intern"sv, intern, "ii"sv, "i"sv },
+    { "noop"sv, noop, ""sv, ""sv },
     { "now"sv, now, ""sv, "d"sv },
     { "release"sv, release, "i"sv, ""sv },
 });
