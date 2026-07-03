@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<div id="out"></div>
+<script src="../include.js"></script>
+<script>
+    // Using a released handle traps, aborting _start: the error event fires, the
+    // pre-trap DOM mutation survives, the post-trap one never happens.
+    asyncTest(async (done) => {
+        const script = document.createElement("script");
+        script.type = "application/wasm-dom";
+        script.src = "../../data/wasm-dom/stale-handle.wasm";
+        script.addEventListener("error", () => {
+            println("error event fired");
+            const out = document.getElementById("out");
+            println("children appended before trap: " + out.childElementCount);
+            done();
+        });
+        script.addEventListener("load", () => {
+            println("unexpected load event");
+            done();
+        });
+        document.body.appendChild(script);
+    });
+</script>

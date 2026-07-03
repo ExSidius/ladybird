@@ -1,0 +1,4 @@
+trunc (4-byte cap): hell
+dst (after retry): hello-attribute
+copy (textContent round-trip): source text
+missing attribute seen as -1: yes

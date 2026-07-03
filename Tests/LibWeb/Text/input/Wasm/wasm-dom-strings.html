@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<div id="src" data-msg="hello-attribute">source text</div>
+<div id="dst"></div>
+<div id="trunc"></div>
+<div id="copy"></div>
+<script type="application/wasm-dom" src="../../data/wasm-dom/strings.wasm"></script>
+<script src="../include.js"></script>
+<script>
+    test(() => {
+        println("trunc (4-byte cap): " + document.getElementById("trunc").textContent);
+        println("dst (after retry): " + document.getElementById("dst").textContent);
+        println("copy (textContent round-trip): " + document.getElementById("copy").textContent);
+        println("missing attribute seen as -1: " + document.getElementById("trunc").getAttribute("data-missing"));
+    });
+</script>

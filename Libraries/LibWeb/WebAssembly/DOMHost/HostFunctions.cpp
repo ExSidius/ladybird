@@ -84,6 +84,42 @@ static Wasm::Result set_attribute(DOMHostInstance& instance, Span<Wasm::Value> a
     return return_i32(0);
 }
 
+// dom.get_attribute(node: i32, name_ptr: i32, name_len: i32, dst_ptr: i32, dst_cap: i32) -> len: i32
+// Returns -1 if the attribute is absent; otherwise the attribute value's full byte
+// length, having written min(len, dst_cap) bytes (the caller-buffer retry ABI).
+static Wasm::Result get_attribute(DOMHostInstance& instance, Span<Wasm::Value> arguments)
+{
+    auto node = TRY_OR_TRAP(instance.node_from_handle(arguments[0].to<i32>()));
+    if (!is<DOM::Element>(*node))
+        return Wasm::Result { Wasm::Trap::from_string("get_attribute requires an element handle"sv) };
+    auto name = TRY_OR_TRAP(instance.read_utf8_string(arguments[1].to<u32>(), arguments[2].to<u32>()));
+    auto value = static_cast<DOM::Element&>(*node).attribute(FlyString { name });
+    if (!value.has_value())
+        return return_i32(-1);
+    return return_i32(TRY_OR_TRAP(instance.write_string(*value, arguments[3].to<u32>(), arguments[4].to<u32>())));
+}
+
+// dom.text_content_get(node: i32, dst_ptr: i32, dst_cap: i32) -> len: i32 (-1 if null)
+static Wasm::Result text_content_get(DOMHostInstance& instance, Span<Wasm::Value> arguments)
+{
+    auto node = TRY_OR_TRAP(instance.node_from_handle(arguments[0].to<i32>()));
+    auto content = node->text_content();
+    if (!content.has_value())
+        return return_i32(-1);
+    auto utf8 = content->to_utf8();
+    return return_i32(TRY_OR_TRAP(instance.write_string(utf8, arguments[1].to<u32>(), arguments[2].to<u32>())));
+}
+
+// dom.text_content_set(node: i32, ptr: i32, len: i32) -> status: i32
+static Wasm::Result text_content_set(DOMHostInstance& instance, Span<Wasm::Value> arguments)
+{
+    auto node = TRY_OR_TRAP(instance.node_from_handle(arguments[0].to<i32>()));
+    auto content = TRY_OR_TRAP(instance.read_utf8_string(arguments[1].to<u32>(), arguments[2].to<u32>()));
+    if (node->set_text_content(Utf16String::from_utf8(content)).is_error())
+        return return_i32(-1);
+    return return_i32(0);
+}
+
 // dom.release(handle: i32) -> ()
 static Wasm::Result release(DOMHostInstance& instance, Span<Wasm::Value> arguments)
 {
@@ -104,6 +140,9 @@ static constexpr auto s_host_functions = to_array<HostFunctionSpec>({
     { "create_text_node"sv, create_text_node, 2, 1 },
     { "append_child"sv, append_child, 2, 1 },
     { "set_attribute"sv, set_attribute, 5, 1 },
+    { "get_attribute"sv, get_attribute, 5, 1 },
+    { "text_content_get"sv, text_content_get, 3, 1 },
+    { "text_content_set"sv, text_content_set, 3, 1 },
     { "release"sv, release, 1, 0 },
 });
 

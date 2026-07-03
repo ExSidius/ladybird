@@ -1,0 +1,2 @@
+error event fired
+children appended before trap: 1
