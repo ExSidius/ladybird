@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<div id="async-root">
+    <div id="status"></div>
+    <button id="async-btn">spawn</button>
+    <ol id="log"></ol>
+</div>
+<script type="application/wasm-dom" src="../../data/wasm-dom/rust-async-guest.wasm"></script>
+<script src="../include.js"></script>
+<script>
+    // The module runs real Rust async/await on a futures::executor::LocalPool,
+    // parked/woken through the dom host's wakeup ABI: a timed countdown, two
+    // fetches joined concurrently, a dependent fetch chain, and per-click
+    // spawned tasks.
+    asyncTest(async (done) => {
+        const root = document.getElementById("async-root");
+        while (root.getAttribute("data-done") === null)
+            await new Promise((resolve) => setTimeout(resolve, 10));
+
+        println("status: " + document.getElementById("status").textContent);
+        const lines = () => [...document.querySelectorAll("#log > li")].map(li => li.textContent);
+        println("line 1: " + lines()[0]);
+        println("line 2: " + lines()[1]);
+
+        document.getElementById("async-btn").click();
+        document.getElementById("async-btn").click();
+        while (document.querySelectorAll("#log > li").length < 4)
+            await new Promise((resolve) => setTimeout(resolve, 10));
+        println("after clicks: " + lines().slice(2).sort().join(", "));
+        done();
+    });
+</script>

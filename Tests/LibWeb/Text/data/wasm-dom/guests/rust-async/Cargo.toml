@@ -1,0 +1,19 @@
+[package]
+name = "wasm-dom-rust-async-guest"
+version = "0.1.0"
+edition = "2021"
+
+# Keep this crate out of the repository's Cranelift workspace.
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+futures = { version = "0.3", default-features = false, features = ["std", "executor", "async-await"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+panic = "abort"
+strip = true

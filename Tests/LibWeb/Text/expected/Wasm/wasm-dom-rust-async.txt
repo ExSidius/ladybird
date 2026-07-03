@@ -1,0 +1,4 @@
+status: running
+line 1: joined: alpha + beta
+line 2: chain: the chain worked
+after clicks: spawned task 1 done, spawned task 2 done

@@ -27,6 +27,22 @@ cp target/wasm32-unknown-unknown/release/wasm_dom_rust_guest.wasm ../../rust-gue
 `--export-table` makes LLD export `__indirect_function_table`; memory and
 `#[no_mangle] _start` are exported by default for cdylib targets.
 
+## Rust async (`rust-async/`)
+
+Same build as `rust/`. Runs real Rust async/await on
+`futures::executor::LocalPool` with a hand-rolled reactor over the host's
+wakeup ABI (`dom.set_timeout` / `dom.fetch` completions wake parked futures).
+Note that tokio itself cannot run on wasm32-unknown-unknown (its runtime needs
+threads, epoll, and a clock); this is the same executor/reactor architecture
+scaled to the browser's single-threaded, wakeup-driven constraints.
+
+```sh
+cd rust-async
+RUSTFLAGS="-C link-args=--export-table" \
+    cargo build --release --target wasm32-unknown-unknown
+cp target/wasm32-unknown-unknown/release/wasm_dom_rust_async_guest.wasm ../../rust-async-guest.wasm
+```
+
 ## Zig (`zig/`)
 
 ```sh
