@@ -268,22 +268,21 @@ class FunctionEmitter:
                 argument_index += 1
                 call_arguments.append(f"p{i}")
             elif p["kind"] == "string":
-                w(f"    auto p{i}_utf8 = TRY_OR_TRAP(instance.read_utf8_string(arguments[{argument_index}].to<u32>(), arguments[{argument_index + 1}].to<u32>()));\n")
-                argument_index += 2
+                # Flavor-specific resolution so interned strings skip conversion.
                 cpp = p["cpp"]
+                pair = f"arguments[{argument_index}].to<u32>(), arguments[{argument_index + 1}].to<u32>()"
                 if cpp == "String":
-                    call_arguments.append(f"p{i}_utf8")
+                    w(f"    auto p{i} = TRY_OR_TRAP(instance.resolve_string({pair}));\n")
                 elif cpp == "FlyString":
-                    w(f"    FlyString p{i} {{ p{i}_utf8 }};\n")
-                    call_arguments.append(f"p{i}")
+                    w(f"    auto p{i} = TRY_OR_TRAP(instance.resolve_fly_string({pair}));\n")
                 elif cpp == "Utf16String":
-                    w(f"    auto p{i} = Utf16String::from_utf8(p{i}_utf8);\n")
-                    call_arguments.append(f"p{i}")
+                    w(f"    auto p{i} = TRY_OR_TRAP(instance.resolve_utf16_string({pair}));\n")
                 elif cpp == "Utf16FlyString":
-                    w(f"    auto p{i} = Utf16FlyString::from_utf8(p{i}_utf8);\n")
-                    call_arguments.append(f"p{i}")
+                    w(f"    Utf16FlyString p{i} {{ TRY_OR_TRAP(instance.resolve_utf16_string({pair})) }};\n")
                 else:
                     raise Unsupported(f"string flavor {cpp}")
+                argument_index += 2
+                call_arguments.append(f"p{i}")
             elif p["kind"] == "interface":
                 target = fully_qualified_name_for_interface(p["interface"])
                 if p["nullable"]:
@@ -496,9 +495,8 @@ static Wasm::Result string_out(DOMHostInstance& instance, T const& value, u32 de
         if (!value.has_value())
             return return_i32(-1);
         return string_out(instance, *value, destination, capacity);
-    } else if constexpr (requires { value.to_utf8(); }) {
-        auto utf8 = value.to_utf8();
-        return return_i32(TRY_OR_TRAP(instance.write_string(utf8, destination, capacity)));
+    } else if constexpr (requires { value.utf16_view(); }) {
+        return return_i32(TRY_OR_TRAP(instance.write_utf16_string(value.utf16_view(), destination, capacity)));
     } else if constexpr (SameAs<RemoveCVReference<T>, FlyString>) {
         return return_i32(TRY_OR_TRAP(instance.write_string(value.bytes_as_string_view(), destination, capacity)));
     } else {

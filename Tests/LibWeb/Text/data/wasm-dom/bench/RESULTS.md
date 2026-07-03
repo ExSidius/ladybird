@@ -17,11 +17,34 @@ Workloads: **build** = create 2,000 divs, 2 setAttribute each, append;
 reps = 15 samples; medians reported. Run with:
 `Ladybird --headless=text --force-new-process file://.../bench-<variant>.html`
 
+### v1 — baseline ABI (2026-07-02)
+
 | workload | JS | wasm+glue | wasm-dom | dom vs js | dom vs glue |
 |---|---|---|---|---|---|
 | build | 5.90 ms | 14.00 ms | **3.44 ms** | **1.72x faster** | **4.07x faster** |
 | text  | 2.70 ms |  9.00 ms | 3.38 ms | 0.80x (slower) | **2.66x faster** |
 | query | 0.70 ms | 10.30 ms | 1.05 ms | 0.67x (slower) | **9.81x faster** |
+
+### v2 — interned strings + identity-cached handles + ASCII fast path (2026-07-03)
+
+Fixes applied to exactly the two measured gaps: `dom.intern` (strings stored
+once, pre-converted to all flavors; `(id, 0xFFFFFFFF)` anywhere a string is
+expected — the glue variant got the equivalent, mirroring wasm-bindgen string
+caching), identity-cached refcounted handles (same element -> same i32; the
+analogue of the engine's JS wrapper cache), and a zero-transcode write path
+for ASCII-backed UTF-16 DOM strings.
+
+| workload | JS | wasm+glue | wasm-dom | dom vs js | dom vs glue |
+|---|---|---|---|---|---|
+| build | 6.20 ms | 7.70 ms | **3.24 ms** | **1.91x faster** | **2.38x faster** |
+| text  | 2.70 ms | 5.90 ms | 3.07 ms | 0.88x | **1.92x faster** |
+| query | 0.70 ms | 4.90 ms | 0.79 ms | 0.89x | **6.20x faster** |
+
+The two JS losses narrowed from 0.67x/0.80x to ~0.9x — within the noise floor
+of the quantized JS clock for *query*. The residual *text* gap is the copy ABI
+itself (JS hands the engine's string to script without copying; we must write
+bytes into guest memory) — closing it fully needs shared/externref strings,
+not a faster copy.
 
 ## Reading
 

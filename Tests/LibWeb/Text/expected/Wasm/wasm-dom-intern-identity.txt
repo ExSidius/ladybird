@@ -1,0 +1,4 @@
+same handle for same element: yes
+valid after one of two releases: yes
+interned element + text: interned text payload
+fresh handle after full release: yes

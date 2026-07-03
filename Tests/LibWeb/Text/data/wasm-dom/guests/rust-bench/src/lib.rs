@@ -28,6 +28,7 @@ macro_rules! host_imports {
             pub fn text_content_set(node: i32, ptr: *const u8, len: usize) -> i32;
             pub fn text_content_get(node: i32, dst: *const u8, cap: usize) -> i32;
             pub fn release(handle: i32);
+            pub fn intern(ptr: *const u8, len: usize) -> i32;
             pub fn now() -> f64;
         }
     };
@@ -48,6 +49,40 @@ fn by_id(id: &str) -> i32 {
     unsafe { get_element_by_id(id.as_ptr(), id.len()) }
 }
 
+/// An interned string id, passed as (id, usize::MAX) wherever (ptr, len) goes.
+#[derive(Clone, Copy)]
+struct IStr(i32);
+
+impl IStr {
+    fn ptr(self) -> *const u8 {
+        self.0 as usize as *const u8
+    }
+    const LEN: usize = usize::MAX;
+}
+
+fn intern_str(s: &str) -> IStr {
+    IStr(unsafe { intern(s.as_ptr(), s.len()) })
+}
+
+struct Interned {
+    div: IStr,
+    class: IStr,
+    item: IStr,
+    data_idx: IStr,
+    even: IStr,
+    odd: IStr,
+    text_a: IStr,
+    text_b: IStr,
+    target: IStr,
+    data_value: IStr,
+}
+
+static mut INTERNED: Option<Interned> = None;
+
+fn interned() -> &'static Interned {
+    unsafe { (*core::ptr::addr_of!(INTERNED)).as_ref().unwrap() }
+}
+
 fn set_text(node: i32, text: &str) {
     unsafe { text_content_set(node, text.as_ptr(), text.len()) };
 }
@@ -59,13 +94,14 @@ const TEXT_N: usize = 4000;
 const QUERY_N: usize = 5000;
 
 fn bench_build() {
+    let s = interned();
     let arena = by_id("arena");
     for i in 0..BUILD_N {
-        let value: &str = if i % 2 == 0 { "even-value" } else { "odd-value" };
+        let value = if i % 2 == 0 { s.even } else { s.odd };
         unsafe {
-            let div = create_element("div".as_ptr(), 3);
-            set_attribute(div, "class".as_ptr(), 5, "item".as_ptr(), 4);
-            set_attribute(div, "data-idx".as_ptr(), 8, value.as_ptr(), value.len());
+            let div = create_element(s.div.ptr(), IStr::LEN);
+            set_attribute(div, s.class.ptr(), IStr::LEN, s.item.ptr(), IStr::LEN);
+            set_attribute(div, s.data_idx.ptr(), IStr::LEN, value.ptr(), IStr::LEN);
             append_child(arena, div);
             release(div);
         }
@@ -74,14 +110,13 @@ fn bench_build() {
 }
 
 fn bench_text() {
+    let s = interned();
     let node = by_id("textnode");
-    let a = "the quick brown fox jumps over it";
-    let b = "a completely different string here";
-    let mut buf = [0u8; 128];
+    let buf = [0u8; 128];
     for i in 0..TEXT_N {
-        let s = if i % 2 == 0 { a } else { b };
+        let payload = if i % 2 == 0 { s.text_a } else { s.text_b };
         unsafe {
-            text_content_set(node, s.as_ptr(), s.len());
+            text_content_set(node, payload.ptr(), IStr::LEN);
             text_content_get(node, buf.as_ptr(), buf.len());
         }
     }
@@ -89,14 +124,17 @@ fn bench_text() {
 }
 
 fn bench_query() {
-    let mut buf = [0u8; 128];
+    let s = interned();
+    let buf = [0u8; 128];
+    let held = unsafe { get_element_by_id(s.target.ptr(), IStr::LEN) };
     for _ in 0..QUERY_N {
         unsafe {
-            let e = get_element_by_id("target".as_ptr(), 6);
-            get_attribute(e, "data-value".as_ptr(), 10, buf.as_ptr(), buf.len());
+            let e = get_element_by_id(s.target.ptr(), IStr::LEN);
+            get_attribute(e, s.data_value.ptr(), IStr::LEN, buf.as_ptr(), buf.len());
             release(e);
         }
     }
+    unsafe { release(held) };
 }
 
 // ---- harness ----
@@ -158,6 +196,20 @@ fn run_and_report(name: &str, reps: u32, f: fn()) {
 
 #[no_mangle]
 pub extern "C" fn _start() {
+    unsafe {
+        INTERNED = Some(Interned {
+            div: intern_str("div"),
+            class: intern_str("class"),
+            item: intern_str("item"),
+            data_idx: intern_str("data-idx"),
+            even: intern_str("even-value"),
+            odd: intern_str("odd-value"),
+            text_a: intern_str("the quick brown fox jumps over it"),
+            text_b: intern_str("a completely different string here"),
+            target: intern_str("target"),
+            data_value: intern_str("data-value"),
+        });
+    }
     run_and_report("build", 5, bench_build);
     run_and_report("text", 5, bench_text);
     run_and_report("query", 5, bench_query);

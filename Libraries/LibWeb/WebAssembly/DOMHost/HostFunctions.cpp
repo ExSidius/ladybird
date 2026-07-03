@@ -41,8 +41,8 @@ static Wasm::Result return_nothing()
 // dom.get_element_by_id(id_ptr: i32, id_len: i32) -> handle: i32 (0 if not found)
 static Wasm::Result get_element_by_id(DOMHostInstance& instance, Span<Wasm::Value> arguments)
 {
-    auto id = TRY_OR_TRAP(instance.read_utf8_string(arguments[0].to<u32>(), arguments[1].to<u32>()));
-    auto element = instance.document().get_element_by_id(FlyString { id });
+    auto id = TRY_OR_TRAP(instance.resolve_fly_string(arguments[0].to<u32>(), arguments[1].to<u32>()));
+    auto element = instance.document().get_element_by_id(id);
     if (!element)
         return return_i32(0);
     return return_i32(instance.allocate_handle(*element, DOMHostInstance::HandleKind::Node));
@@ -51,8 +51,8 @@ static Wasm::Result get_element_by_id(DOMHostInstance& instance, Span<Wasm::Valu
 // dom.create_element(name_ptr: i32, name_len: i32) -> handle: i32 (0 on invalid name)
 static Wasm::Result create_element(DOMHostInstance& instance, Span<Wasm::Value> arguments)
 {
-    auto local_name = TRY_OR_TRAP(instance.read_utf8_string(arguments[0].to<u32>(), arguments[1].to<u32>()));
-    auto element_or_error = DOM::create_element(instance.document(), FlyString { local_name }, Namespace::HTML);
+    auto local_name = TRY_OR_TRAP(instance.resolve_fly_string(arguments[0].to<u32>(), arguments[1].to<u32>()));
+    auto element_or_error = DOM::create_element(instance.document(), local_name, Namespace::HTML);
     if (element_or_error.is_error())
         return return_i32(0);
     return return_i32(instance.allocate_handle(*element_or_error.release_value(), DOMHostInstance::HandleKind::Node));
@@ -61,8 +61,8 @@ static Wasm::Result create_element(DOMHostInstance& instance, Span<Wasm::Value> 
 // dom.create_text_node(data_ptr: i32, data_len: i32) -> handle: i32
 static Wasm::Result create_text_node(DOMHostInstance& instance, Span<Wasm::Value> arguments)
 {
-    auto data = TRY_OR_TRAP(instance.read_utf8_string(arguments[0].to<u32>(), arguments[1].to<u32>()));
-    auto text = instance.document().create_text_node(Utf16String::from_utf8(data));
+    auto data = TRY_OR_TRAP(instance.resolve_utf16_string(arguments[0].to<u32>(), arguments[1].to<u32>()));
+    auto text = instance.document().create_text_node(data);
     return return_i32(instance.allocate_handle(*text, DOMHostInstance::HandleKind::Node));
 }
 
@@ -82,9 +82,9 @@ static Wasm::Result set_attribute(DOMHostInstance& instance, Span<Wasm::Value> a
     auto node = TRY_OR_TRAP(instance.node_from_handle(arguments[0].to<i32>()));
     if (!is<DOM::Element>(*node))
         return Wasm::Result { Wasm::Trap::from_string("set_attribute requires an element handle"sv) };
-    auto name = TRY_OR_TRAP(instance.read_utf8_string(arguments[1].to<u32>(), arguments[2].to<u32>()));
-    auto value = TRY_OR_TRAP(instance.read_utf8_string(arguments[3].to<u32>(), arguments[4].to<u32>()));
-    static_cast<DOM::Element&>(*node).set_attribute_value(FlyString { name }, value);
+    auto name = TRY_OR_TRAP(instance.resolve_fly_string(arguments[1].to<u32>(), arguments[2].to<u32>()));
+    auto value = TRY_OR_TRAP(instance.resolve_string(arguments[3].to<u32>(), arguments[4].to<u32>()));
+    static_cast<DOM::Element&>(*node).set_attribute_value(name, value);
     return return_i32(0);
 }
 
@@ -96,8 +96,8 @@ static Wasm::Result get_attribute(DOMHostInstance& instance, Span<Wasm::Value> a
     auto node = TRY_OR_TRAP(instance.node_from_handle(arguments[0].to<i32>()));
     if (!is<DOM::Element>(*node))
         return Wasm::Result { Wasm::Trap::from_string("get_attribute requires an element handle"sv) };
-    auto name = TRY_OR_TRAP(instance.read_utf8_string(arguments[1].to<u32>(), arguments[2].to<u32>()));
-    auto value = static_cast<DOM::Element&>(*node).attribute(FlyString { name });
+    auto name = TRY_OR_TRAP(instance.resolve_fly_string(arguments[1].to<u32>(), arguments[2].to<u32>()));
+    auto value = static_cast<DOM::Element&>(*node).attribute(name);
     if (!value.has_value())
         return return_i32(-1);
     return return_i32(TRY_OR_TRAP(instance.write_string(*value, arguments[3].to<u32>(), arguments[4].to<u32>())));
@@ -110,16 +110,15 @@ static Wasm::Result text_content_get(DOMHostInstance& instance, Span<Wasm::Value
     auto content = node->text_content();
     if (!content.has_value())
         return return_i32(-1);
-    auto utf8 = content->to_utf8();
-    return return_i32(TRY_OR_TRAP(instance.write_string(utf8, arguments[1].to<u32>(), arguments[2].to<u32>())));
+    return return_i32(TRY_OR_TRAP(instance.write_utf16_string(content->utf16_view(), arguments[1].to<u32>(), arguments[2].to<u32>())));
 }
 
 // dom.text_content_set(node: i32, ptr: i32, len: i32) -> status: i32
 static Wasm::Result text_content_set(DOMHostInstance& instance, Span<Wasm::Value> arguments)
 {
     auto node = TRY_OR_TRAP(instance.node_from_handle(arguments[0].to<i32>()));
-    auto content = TRY_OR_TRAP(instance.read_utf8_string(arguments[1].to<u32>(), arguments[2].to<u32>()));
-    if (node->set_text_content(Utf16String::from_utf8(content)).is_error())
+    auto content = TRY_OR_TRAP(instance.resolve_utf16_string(arguments[1].to<u32>(), arguments[2].to<u32>()));
+    if (node->set_text_content(content).is_error())
         return return_i32(-1);
     return return_i32(0);
 }
@@ -130,13 +129,13 @@ static Wasm::Result text_content_set(DOMHostInstance& instance, Span<Wasm::Value
 static Wasm::Result add_event_listener(DOMHostInstance& instance, Span<Wasm::Value> arguments)
 {
     auto node = TRY_OR_TRAP(instance.node_from_handle(arguments[0].to<i32>()));
-    auto type = TRY_OR_TRAP(instance.read_utf8_string(arguments[1].to<u32>(), arguments[2].to<u32>()));
+    auto type = TRY_OR_TRAP(instance.resolve_fly_string(arguments[1].to<u32>(), arguments[2].to<u32>()));
     auto function = TRY_OR_TRAP(instance.callback_from_table_index(arguments[3].to<u32>()));
 
     auto& heap = instance.heap();
     auto callback = heap.allocate<NativeEventCallback>(instance, function, arguments[4].to<i32>());
     auto listener = heap.allocate<DOM::DOMEventListener>();
-    listener->type = FlyString { type };
+    listener->type = type;
     listener->native_callback = callback;
     node->add_an_event_listener(*listener);
     return return_i32(0);
@@ -165,7 +164,7 @@ static Wasm::Result set_timeout(DOMHostInstance& instance, Span<Wasm::Value> arg
 // handle (0 on network failure) valid only for the duration of the callback.
 static Wasm::Result fetch(DOMHostInstance& instance, Span<Wasm::Value> arguments)
 {
-    auto url_string = TRY_OR_TRAP(instance.read_utf8_string(arguments[0].to<u32>(), arguments[1].to<u32>()));
+    auto url_string = TRY_OR_TRAP(instance.resolve_string(arguments[0].to<u32>(), arguments[1].to<u32>()));
     auto function = TRY_OR_TRAP(instance.callback_from_table_index(arguments[2].to<u32>()));
     auto url = instance.document().encoding_parse_url(url_string);
     if (!url.has_value())
@@ -188,6 +187,15 @@ static Wasm::Result response_read(DOMHostInstance& instance, Span<Wasm::Value> a
     auto response = TRY_OR_TRAP(instance.response_from_handle(arguments[0].to<i32>()));
     auto body = StringView { response->body() };
     return return_i32(TRY_OR_TRAP(instance.write_string(body, arguments[1].to<u32>(), arguments[2].to<u32>())));
+}
+
+// dom.intern(ptr: i32, len: i32) -> id: i32
+// Stores the string once, pre-converted to every flavor; pass (id, 0xFFFFFFFF)
+// wherever a string parameter is expected.
+static Wasm::Result intern(DOMHostInstance& instance, Span<Wasm::Value> arguments)
+{
+    auto string = TRY_OR_TRAP(instance.read_utf8_string(arguments[0].to<u32>(), arguments[1].to<u32>()));
+    return return_i32(instance.intern_string(move(string)));
 }
 
 // dom.release(handle: i32) -> ()
@@ -229,6 +237,7 @@ static constexpr auto s_host_functions = to_array<HostFunctionSpec>({
     { "response_status"sv, response_status, "i"sv, "i"sv },
     { "response_read"sv, response_read, "iii"sv, "i"sv },
     { "last_error_message"sv, last_error_message, "ii"sv, "i"sv },
+    { "intern"sv, intern, "ii"sv, "i"sv },
     { "now"sv, now, ""sv, "d"sv },
     { "release"sv, release, "i"sv, ""sv },
 });

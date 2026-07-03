@@ -8,6 +8,7 @@
 
 #include <AK/ByteBuffer.h>
 #include <AK/ByteString.h>
+#include <AK/HashMap.h>
 #include <AK/NonnullOwnPtr.h>
 #include <AK/Vector.h>
 #include <LibGC/Ptr.h>
@@ -91,6 +92,19 @@ public:
 
     ErrorOr<String, Wasm::Trap> read_utf8_string(u32 pointer, u32 length);
     ErrorOr<i32, Wasm::Trap> write_string(StringView, u32 destination_pointer, u32 destination_capacity);
+    // Like write_string but for UTF-16 DOM strings: ASCII-backed strings (the
+    // common case) are written directly with no transcode or allocation.
+    ErrorOr<i32, Wasm::Trap> write_utf16_string(Utf16View const&, u32 destination_pointer, u32 destination_capacity);
+
+    // Interned strings: dom.intern(ptr, len) stores a string once (pre-converted
+    // to every flavor the DOM wants) and returns an id; any string parameter then
+    // accepts (id, interned_length_sentinel) instead of (ptr, len), skipping the
+    // per-call copy, transcode, and FlyString hashing.
+    static constexpr u32 interned_length_sentinel = 0xFFFFFFFF;
+    i32 intern_string(String);
+    ErrorOr<String, Wasm::Trap> resolve_string(u32 pointer_or_id, u32 length);
+    ErrorOr<FlyString, Wasm::Trap> resolve_fly_string(u32 pointer_or_id, u32 length);
+    ErrorOr<Utf16String, Wasm::Trap> resolve_utf16_string(u32 pointer_or_id, u32 length);
 
     DOM::Document& document() { return *m_document; }
     Wasm::Module const& module() const { return *m_module; }
@@ -108,12 +122,26 @@ private:
 
     struct HandleEntry {
         GC::Ptr<GC::Cell> cell;
+        u32 ref_count { 0 };
         u8 generation { 1 };
         HandleKind kind { HandleKind::Node };
     };
     ErrorOr<HandleEntry*, Wasm::Trap> entry_from_handle(i32, Optional<HandleKind>);
 
     Optional<String> m_last_error;
+
+    // Handles are identity-cached: acquiring the same cell twice returns the same
+    // handle with a bumped reference count, so guest-side handle equality is
+    // object identity. The map only mirrors live entries (which pin their cells,
+    // and the GC does not move cells), so raw keys are safe.
+    HashMap<GC::Cell*, u32> m_cell_to_handle_index;
+
+    struct InternedString {
+        String utf8;
+        FlyString fly;
+        Utf16String utf16;
+    };
+    Vector<InternedString> m_interned_strings;
 
     GC::Ref<DOM::Document> m_document;
     // The machine must be heap-allocated and never move: its store hands out

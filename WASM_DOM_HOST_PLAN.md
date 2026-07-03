@@ -39,14 +39,22 @@ A *host interface* (a "platform" in Roc terms), not a runtime:
   `__indirect_function_table`.
 - **Handles**: opaque `i32`; generational (8-bit generation | 24-bit index into
   a per-instance table); `0` is null; slot 0 reserved. Stale/wrong-kind handle →
-  trap. `dom.release(handle)` frees (idempotent). A live handle pins its node.
+  trap. **Identity-cached and refcounted**: acquiring the same cell again returns
+  the same handle (guest handle equality = object identity, the analogue of the
+  engine's JS wrapper cache); `dom.release` decrements, and the slot frees (and
+  the value goes stale) when acquires and releases balance. A live handle pins
+  its node.
 - **Handle entries are traced `GC::Ptr`s** (visited by `DOMHostInstance`), not
   `GC::Root`s: node ↔ instance cycles are ordinary same-heap GC cycles and are
   collected when the document goes away. No listener-cycle leak by design.
 - **Strings** guest→host: `(ptr: i32, len: i32)` UTF-8, bounds-checked; OOB or
-  invalid UTF-8 → trap. Host→guest: caller-provided buffer `(dst_ptr, dst_cap)`;
-  host writes `min(len, cap)` bytes and returns the full length; guest retries
-  with a larger buffer if `len > cap`.
+  invalid UTF-8 → trap. **Interning**: `dom.intern(ptr, len) -> id` stores a
+  string once, pre-converted to String/FlyString/Utf16String; `(id, 0xFFFFFFFF)`
+  is accepted anywhere a string parameter is expected, skipping the per-call
+  copy, transcode, and FlyString hashing. Host→guest: caller-provided buffer
+  `(dst_ptr, dst_cap)`; host writes `min(len, cap)` bytes and returns the full
+  length; guest retries with a larger buffer if `len > cap`. ASCII-backed
+  UTF-16 DOM strings are written with no transcode or allocation.
 - **Callbacks** (M2): `i32` index into the guest's exported funcref table plus
   `i32 user_data`; uniform signature `(i32 arg, i32 user_data) -> ()`.
 - **Errors**: expected failures return `0`/`-1`; ABI violations trap

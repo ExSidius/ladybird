@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<div id="out"></div>
+<script type="application/wasm-dom" src="../../data/wasm-dom/intern-identity.wasm"></script>
+<script src="../include.js"></script>
+<script>
+    // Handles are identity-cached (same element -> same i32, refcounted release);
+    // interned string ids work anywhere a string parameter is expected.
+    test(() => {
+        const out = document.getElementById("out");
+        println("same handle for same element: " + out.getAttribute("data-identity"));
+        println("valid after one of two releases: " + out.getAttribute("data-alive"));
+        println("interned element + text: " + out.querySelector("li").textContent);
+        println("fresh handle after full release: " + out.getAttribute("data-fresh"));
+    });
+</script>

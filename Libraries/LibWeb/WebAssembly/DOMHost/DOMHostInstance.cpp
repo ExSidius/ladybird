@@ -150,18 +150,28 @@ void DOMHostInstance::invoke_callback(Wasm::FunctionAddress function, i32 argume
 
 i32 DOMHostInstance::allocate_handle(GC::Cell& cell, HandleKind kind)
 {
+    // Identity cache: re-acquiring a live cell returns its existing handle.
+    if (auto existing_index = m_cell_to_handle_index.get(&cell); existing_index.has_value()) {
+        auto& entry = m_handles[*existing_index];
+        VERIFY(entry.cell == &cell);
+        entry.ref_count++;
+        return static_cast<i32>((static_cast<u32>(entry.generation) << handle_index_bits) | *existing_index);
+    }
+
     u32 index = 0;
     if (!m_free_handle_indices.is_empty()) {
         index = m_free_handle_indices.take_last();
         m_handles[index].cell = &cell;
+        m_handles[index].ref_count = 1;
         m_handles[index].kind = kind;
     } else {
         index = m_handles.size();
         // With 24-bit indices a page would need ~16 million simultaneously live
         // handles to overflow; trap-by-VERIFY is fine for a prototype.
         VERIFY(index <= handle_index_mask);
-        m_handles.append({ &cell, 1, kind });
+        m_handles.append({ &cell, 1, 1, kind });
     }
+    m_cell_to_handle_index.set(&cell, index);
     return static_cast<i32>((static_cast<u32>(m_handles[index].generation) << handle_index_bits) | index);
 }
 
@@ -290,12 +300,56 @@ void DOMHostInstance::release_handle(i32 handle)
     auto& entry = m_handles[index];
     if (!entry.cell || entry.generation != generation)
         return;
+    // Identity-cached handles are reference-counted: the slot frees (and the
+    // handle value goes stale) only when acquires and releases balance out.
+    if (--entry.ref_count > 0)
+        return;
+    m_cell_to_handle_index.remove(entry.cell.ptr());
     entry.cell = nullptr;
     // Bump the generation so outstanding copies of this handle go stale. Generation
     // 0 is never issued, so a full wrap cannot collide with the null encoding;
     // aliasing after 255 reuses of one slot is an accepted prototype limitation.
     entry.generation = entry.generation == 255 ? 1 : entry.generation + 1;
     m_free_handle_indices.append(index);
+}
+
+i32 DOMHostInstance::intern_string(String string)
+{
+    auto id = m_interned_strings.size();
+    auto fly = FlyString { string };
+    auto utf16 = Utf16String::from_utf8(string);
+    m_interned_strings.append({ move(string), move(fly), move(utf16) });
+    return static_cast<i32>(id);
+}
+
+ErrorOr<String, Wasm::Trap> DOMHostInstance::resolve_string(u32 pointer_or_id, u32 length)
+{
+    if (length == interned_length_sentinel) {
+        if (pointer_or_id >= m_interned_strings.size())
+            return Wasm::Trap::from_string(ByteString::formatted("invalid interned string id {}", pointer_or_id));
+        return m_interned_strings[pointer_or_id].utf8;
+    }
+    return read_utf8_string(pointer_or_id, length);
+}
+
+ErrorOr<FlyString, Wasm::Trap> DOMHostInstance::resolve_fly_string(u32 pointer_or_id, u32 length)
+{
+    if (length == interned_length_sentinel) {
+        if (pointer_or_id >= m_interned_strings.size())
+            return Wasm::Trap::from_string(ByteString::formatted("invalid interned string id {}", pointer_or_id));
+        return m_interned_strings[pointer_or_id].fly;
+    }
+    return FlyString { TRY(read_utf8_string(pointer_or_id, length)) };
+}
+
+ErrorOr<Utf16String, Wasm::Trap> DOMHostInstance::resolve_utf16_string(u32 pointer_or_id, u32 length)
+{
+    if (length == interned_length_sentinel) {
+        if (pointer_or_id >= m_interned_strings.size())
+            return Wasm::Trap::from_string(ByteString::formatted("invalid interned string id {}", pointer_or_id));
+        return m_interned_strings[pointer_or_id].utf16;
+    }
+    return Utf16String::from_utf8(TRY(read_utf8_string(pointer_or_id, length)));
 }
 
 ErrorOr<Wasm::MemoryInstance*, Wasm::Trap> DOMHostInstance::memory()
@@ -322,6 +376,13 @@ ErrorOr<String, Wasm::Trap> DOMHostInstance::read_utf8_string(u32 pointer, u32 l
     if (string_or_error.is_error())
         return Wasm::Trap::from_string(ByteString::formatted("string ({:#x}, {}) is not valid UTF-8", pointer, length));
     return string_or_error.release_value();
+}
+
+ErrorOr<i32, Wasm::Trap> DOMHostInstance::write_utf16_string(Utf16View const& view, u32 destination_pointer, u32 destination_capacity)
+{
+    if (view.has_ascii_storage())
+        return write_string(StringView { view.bytes() }, destination_pointer, destination_capacity);
+    return write_string(MUST(view.to_utf8()), destination_pointer, destination_capacity);
 }
 
 ErrorOr<i32, Wasm::Trap> DOMHostInstance::write_string(StringView string, u32 destination_pointer, u32 destination_capacity)
