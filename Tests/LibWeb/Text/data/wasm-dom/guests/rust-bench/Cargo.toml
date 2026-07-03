@@ -1,0 +1,21 @@
+[package]
+name = "wasm-dom-rust-bench"
+version = "0.1.0"
+edition = "2021"
+
+# Keep this crate out of the repository's Cranelift workspace.
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+# Import from module "glue" (a JS import object) instead of "dom" (the native
+# host interface). The workload code is byte-for-byte identical.
+glue = []
+
+[profile.release]
+opt-level = 3
+lto = true
+panic = "abort"
+strip = true

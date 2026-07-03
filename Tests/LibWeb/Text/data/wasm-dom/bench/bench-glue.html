@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<!-- DOM benchmark, wasm-through-JS-glue variant: the identical Rust module, but its
+     imports are JS functions keeping an object heap and decoding strings out of
+     wasm memory - the wasm-bindgen architecture, hand-rolled. Module inlined as
+     base64 and instantiated synchronously so it runs before the load event. -->
+<div id="status">running</div>
+<div hidden id="target" data-value="the-target-value"></div>
+<div hidden id="textnode"></div>
+<div hidden id="arena"></div>
+<ol id="results"></ol>
+<script>
+const bytes = Uint8Array.from(atob("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"), c => c.charCodeAt(0));
+
+const heap = [null];
+function toHandle(obj) { heap.push(obj); return heap.length - 1; }
+const decoder = new TextDecoder();
+const encoder = new TextEncoder();
+let memory;
+const mem = () => new Uint8Array(memory.buffer);
+const readStr = (p, l) => decoder.decode(mem().subarray(p, p + l));
+function writeStr(value, dst, cap) {
+    const bytes = encoder.encode(value);
+    mem().set(bytes.subarray(0, Math.min(bytes.length, cap)), dst);
+    return bytes.length;
+}
+
+const glue = {
+    get_element_by_id: (p, l) => { const e = document.getElementById(readStr(p, l)); return e ? toHandle(e) : 0; },
+    create_element: (p, l) => toHandle(document.createElement(readStr(p, l))),
+    append_child: (a, b) => { heap[a].appendChild(heap[b]); return 0; },
+    set_attribute: (n, np, nl, vp, vl) => { heap[n].setAttribute(readStr(np, nl), readStr(vp, vl)); return 0; },
+    get_attribute: (n, np, nl, dst, cap) => { const v = heap[n].getAttribute(readStr(np, nl)); return v === null ? -1 : writeStr(v, dst, cap); },
+    text_content_set: (n, p, l) => { heap[n].textContent = readStr(p, l); return 0; },
+    text_content_get: (n, dst, cap) => { const v = heap[n].textContent; return v === null ? -1 : writeStr(v, dst, cap); },
+    release: (i) => { heap[i] = null; },
+    now: () => performance.now(),
+};
+
+const module = new WebAssembly.Module(bytes);
+const instance = new WebAssembly.Instance(module, { glue });
+memory = instance.exports.memory;
+instance.exports._start();
+</script>

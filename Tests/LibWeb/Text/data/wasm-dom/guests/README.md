@@ -43,6 +43,22 @@ RUSTFLAGS="-C link-args=--export-table" \
 cp target/wasm32-unknown-unknown/release/wasm_dom_rust_async_guest.wasm ../../rust-async-guest.wasm
 ```
 
+## Rust bench (`rust-bench/`)
+
+The benchmark guest (see `../bench/RESULTS.md`). One crate, two binaries: the
+default build imports from `dom` (native host interface); `--features glue`
+imports from `glue` (a JS import object with the same ABI). The workload code
+is identical, so the pair isolates the cost of the boundary itself.
+
+```sh
+cd rust-bench
+RUSTFLAGS="-C link-args=--export-table" cargo build --release --target wasm32-unknown-unknown
+cp target/wasm32-unknown-unknown/release/wasm_dom_rust_bench.wasm ../../bench/rust-bench-dom.wasm
+RUSTFLAGS="-C link-args=--export-table" cargo build --release --target wasm32-unknown-unknown --features glue
+cp target/wasm32-unknown-unknown/release/wasm_dom_rust_bench.wasm ../../bench/rust-bench-glue.wasm
+# regenerate bench-glue.html (inlines the glue module as base64): see git history
+```
+
 ## Zig (`zig/`)
 
 ```sh

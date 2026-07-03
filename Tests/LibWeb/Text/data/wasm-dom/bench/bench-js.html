@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<!-- DOM benchmark, pure JavaScript variant. Same workloads as the wasm variants. -->
+<div id="status">running</div>
+<div hidden id="target" data-value="the-target-value"></div>
+<div hidden id="textnode"></div>
+<div hidden id="arena"></div>
+<ol id="results"></ol>
+<script>
+const BUILD_N = 2000, TEXT_N = 4000, QUERY_N = 5000;
+
+function benchBuild() {
+    const arena = document.getElementById("arena");
+    for (let i = 0; i < BUILD_N; i++) {
+        const value = i % 2 === 0 ? "even-value" : "odd-value";
+        const div = document.createElement("div");
+        div.setAttribute("class", "item");
+        div.setAttribute("data-idx", value);
+        arena.appendChild(div);
+    }
+}
+
+function benchText() {
+    const node = document.getElementById("textnode");
+    const a = "the quick brown fox jumps over it";
+    const b = "a completely different string here";
+    let sink;
+    for (let i = 0; i < TEXT_N; i++) {
+        node.textContent = i % 2 === 0 ? a : b;
+        sink = node.textContent;
+    }
+    return sink;
+}
+
+function benchQuery() {
+    let sink;
+    for (let i = 0; i < QUERY_N; i++) {
+        const e = document.getElementById("target");
+        sink = e.getAttribute("data-value");
+    }
+    return sink;
+}
+
+function runAndReport(name, reps, f) {
+    const results = document.getElementById("results");
+    for (let r = 0; r < reps; r++) {
+        const start = performance.now();
+        f();
+        const elapsed = performance.now() - start;
+        const li = document.createElement("li");
+        li.textContent = `${name} ${elapsed.toFixed(2)} ms`;
+        results.appendChild(li);
+    }
+}
+
+runAndReport("build", 5, benchBuild);
+runAndReport("text", 5, benchText);
+runAndReport("query", 5, benchQuery);
+document.getElementById("results").setAttribute("data-done", "yes");
+document.getElementById("status").textContent = "done";
+</script>
