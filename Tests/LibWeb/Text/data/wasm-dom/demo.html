@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>WASM-DOM demo</title>
+<style>
+body { font-family: sans-serif; margin: 2rem; }
+h1 { color: rebeccapurple; }
+#out li { margin: 0.25rem 0; }
+</style>
+</head>
+<body>
+<h1>This page contains zero JavaScript</h1>
+<p>A WebAssembly module (see events.wat) registered the click listener below and
+builds every list item through the C++ <code>dom</code> host interface. LibJS never
+executes on this page.</p>
+<button id="btn">Click me</button>
+<ol id="out"></ol>
+<script type="application/wasm-dom" src="events.wasm"></script>
+</body>
+</html>
